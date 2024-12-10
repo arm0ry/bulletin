@@ -225,22 +225,24 @@ contract BulletinTest is Test {
 
     function settleAsk(
         address op,
-        uint256 askId,
+        uint40 askId,
+        uint40 role,
         uint16[] memory percentages
     ) public payable {
         vm.prank(op);
-        bulletin.settleAsk(askId, percentages);
+        bulletin.settleAsk(askId, role, percentages);
     }
 
     function setupTrade(
         address user,
         uint256 askId,
+        uint40 role,
         address userBulletin,
         uint256 userResourceId
     ) public payable returns (uint256 id) {
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
-            timestamp: 0,
+            role: role,
             resource: bulletin.encodeAsset(
                 address(userBulletin),
                 uint96(userResourceId)
@@ -481,12 +483,14 @@ contract BulletinTest is Test {
         assertEq(MockERC20(mock).balanceOf(owner), amount);
     }
 
-    function test_updateAsk_InvalidOp(uint256 amount) public payable {
+    function test_updateAsk_InvalidOriginalPoster(
+        uint256 amount
+    ) public payable {
         mock.mint(owner, amount);
         uint256 askId = askAndDepositCurrency(true, owner, amount);
 
         IBulletin.Ask memory a;
-        vm.expectRevert(IBulletin.InvalidOp.selector);
+        vm.expectRevert(IBulletin.InvalidOriginalPoster.selector);
         bulletin.updateAsk(askId, a);
     }
 
@@ -619,7 +623,7 @@ contract BulletinTest is Test {
     }
 
     // todo: asserts
-    function test_withdraw_InvalidOp() public payable {}
+    function test_withdraw_InvalidOriginalPoster() public payable {}
 
     // todo: asserts
     function test_withdraw_InvalidWithdrawal() public payable {}
@@ -695,6 +699,7 @@ contract BulletinTest is Test {
         uint256 tradeId = setupTrade(
             alice,
             askId,
+            PERMISSIONED_USER,
             address(bulletin),
             resourceId
         );
@@ -706,7 +711,6 @@ contract BulletinTest is Test {
         trade = bulletin.getTrade(askId, tradeId);
 
         assertEq(trade.approved, !approved);
-        assertEq(trade.timestamp, block.timestamp);
         assertEq(
             trade.resource,
             bulletin.encodeAsset(address(bulletin), uint96(resourceId))
@@ -732,6 +736,7 @@ contract BulletinTest is Test {
         uint256 tradeId = setupTrade(
             alice,
             askId,
+            PERMISSIONED_USER,
             address(bulletin),
             resourceId
         );
@@ -747,7 +752,6 @@ contract BulletinTest is Test {
         trade = bulletin.getTrade(askId, tradeId);
 
         assertEq(trade.approved, !approved);
-        assertEq(trade.timestamp, block.timestamp);
         assertEq(
             trade.resource,
             bulletin.encodeAsset(address(bulletin), uint96(resourceId))
@@ -756,22 +760,13 @@ contract BulletinTest is Test {
         assertEq(trade.data, BYTES);
     }
 
-    function test_approveTrade_InvalidOp(
+    function test_approveTrade_InvalidOriginalPoster(
         uint256 _askId,
         uint256 _tradeId
     ) public payable {
         vm.prank(owner);
-        vm.expectRevert(IBulletin.InvalidOp.selector);
+        vm.expectRevert(IBulletin.InvalidOriginalPoster.selector);
         bulletin.approveTrade(_askId, _tradeId);
-    }
-
-    function test_approveTrade_NothingToTrade(uint256 _tradeId) public payable {
-        test_ask();
-        uint256 askId = bulletin.askId();
-
-        vm.prank(owner);
-        vm.expectRevert(IBulletin.NothingToTrade.selector);
-        bulletin.approveTrade(askId, _tradeId);
     }
 
     function test_settleAsk_OneTrade(uint256 amount) public payable {
@@ -795,6 +790,7 @@ contract BulletinTest is Test {
         uint256 tradeId = setupTrade(
             alice,
             askId,
+            PERMISSIONED_USER,
             address(bulletin),
             resourceId
         );
@@ -805,7 +801,7 @@ contract BulletinTest is Test {
         // settle ask
         uint16[] memory perc = new uint16[](1);
         perc[0] = 10000;
-        settleAsk(owner, askId, perc);
+        settleAsk(owner, uint40(askId), uint40(PERMISSIONED_USER), perc);
 
         assertEq(MockERC20(mock).balanceOf(address(bulletin)), 0);
         assertEq(MockERC20(mock).balanceOf(alice), amount);
@@ -836,6 +832,7 @@ contract BulletinTest is Test {
         uint256 tradeId = setupTrade(
             alice,
             askId,
+            PERMISSIONED_USER,
             address(bulletin),
             resourceId
         );
@@ -847,7 +844,13 @@ contract BulletinTest is Test {
         uint256 resourceId2 = resource(false, bob);
 
         // setup second trade
-        tradeId = setupTrade(bob, askId, address(bulletin), resourceId2);
+        tradeId = setupTrade(
+            bob,
+            askId,
+            PERMISSIONED_USER,
+            address(bulletin),
+            resourceId2
+        );
 
         // approve second trade
         approveTrade(owner, askId, tradeId);
@@ -856,7 +859,7 @@ contract BulletinTest is Test {
         uint16[] memory perc = new uint16[](2);
         perc[0] = 6000;
         perc[1] = 4000;
-        settleAsk(owner, askId, perc);
+        settleAsk(owner, uint40(askId), PERMISSIONED_USER, perc);
 
         assertEq(
             MockERC20(mock).balanceOf(address(bulletin)),
@@ -901,6 +904,7 @@ contract BulletinTest is Test {
         uint256 tradeId = setupTrade(
             alice,
             askId,
+            PERMISSIONED_USER,
             address(bulletin),
             resourceId
         );
@@ -912,7 +916,13 @@ contract BulletinTest is Test {
         uint256 resourceId2 = resource(false, bob);
 
         // setup second trade
-        tradeId = setupTrade(bob, askId, address(bulletin), resourceId2);
+        tradeId = setupTrade(
+            bob,
+            askId,
+            PERMISSIONED_USER,
+            address(bulletin),
+            resourceId2
+        );
 
         // approve second trade
         approveTrade(owner, askId, tradeId);
@@ -921,7 +931,13 @@ contract BulletinTest is Test {
         uint256 resourceId3 = resource(false, charlie);
 
         // setup third trade
-        tradeId = setupTrade(charlie, askId, address(bulletin), resourceId3);
+        tradeId = setupTrade(
+            charlie,
+            askId,
+            PERMISSIONED_USER,
+            address(bulletin),
+            resourceId3
+        );
 
         // approve third trade
         approveTrade(owner, askId, tradeId);
@@ -931,7 +947,7 @@ contract BulletinTest is Test {
         perc[0] = 5000;
         perc[1] = 2500;
         perc[2] = 2500;
-        settleAsk(owner, askId, perc);
+        settleAsk(owner, uint40(askId), PERMISSIONED_USER, perc);
 
         assertEq(
             MockERC20(mock).balanceOf(address(bulletin)),
@@ -980,6 +996,8 @@ contract BulletinTest is Test {
         deployBulletin3(bob);
 
         // grant BULLETIN role
+        grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
+        grantRole(address(bulletin), owner, bob, PERMISSIONED_USER);
         grantRole(address(bulletin2), alice, address(bulletin), BULLETIN_ROLE);
         grantRole(address(bulletin3), bob, address(bulletin), BULLETIN_ROLE);
 
@@ -998,7 +1016,7 @@ contract BulletinTest is Test {
         // setup first trade
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
-            timestamp: 0,
+            role: PERMISSIONED_USER,
             resource: bulletin.encodeAsset(address(bulletin2), uint96(1)),
             feedback: TEST,
             data: BYTES
@@ -1025,7 +1043,7 @@ contract BulletinTest is Test {
         // setup second trade
         trade = IBulletin.Trade({
             approved: true,
-            timestamp: 0,
+            role: PERMISSIONED_USER,
             resource: bulletin.encodeAsset(address(bulletin3), uint96(1)),
             feedback: TEST,
             data: BYTES
@@ -1041,7 +1059,7 @@ contract BulletinTest is Test {
         uint16[] memory perc = new uint16[](2);
         perc[0] = 6000;
         perc[1] = 4000;
-        settleAsk(owner, askId, perc);
+        settleAsk(owner, uint40(askId), PERMISSIONED_USER, perc);
 
         assertEq(
             MockERC20(mock).balanceOf(address(bulletin)),

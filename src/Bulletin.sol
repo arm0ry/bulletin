@@ -19,6 +19,9 @@ contract Bulletin is OwnableRoles, IBulletin {
     /// The permissioned role to call `incrementUsage()`.
     uint40 public constant BULLETIN_ROLE = 1 << 1;
 
+    /// The permissioned role reserved for trade agents.
+    uint40 public constant AGENT_ROLE = 1 << 2;
+
     /* -------------------------------------------------------------------------- */
     /*                                  Storage.                                  */
     /* -------------------------------------------------------------------------- */
@@ -29,6 +32,7 @@ contract Bulletin is OwnableRoles, IBulletin {
     // Mappings by `askId`.
     mapping(uint256 => Ask) public asks;
     mapping(uint256 => uint256) public tradeIds;
+    mapping(uint256 => mapping(bytes32 => bool)) public doesTradeExist;
     mapping(uint256 => mapping(uint256 => Trade)) public trades; // Reciprocal events.
 
     // Mappings by `resourceId`.
@@ -40,7 +44,7 @@ contract Bulletin is OwnableRoles, IBulletin {
     /*                                 Modifiers.                                 */
     /* -------------------------------------------------------------------------- */
 
-    modifier checkSum(uint16[] calldata p) {
+    function checkSum(uint16[] calldata p) public pure {
         // Add up all percentages.
         uint256 totalPercentage;
         for (uint256 i; i < p.length; ++i) {
@@ -50,9 +54,6 @@ contract Bulletin is OwnableRoles, IBulletin {
         // Throw when total percentage does not equal to TEN_THOUSAND.
         if (totalPercentage != TEN_THOUSAND)
             revert TotalPercentageMustBeTenThousand();
-
-        // Otherwise, continue.
-        _;
     }
 
     /* -------------------------------------------------------------------------- */
@@ -84,21 +85,27 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     /// target `askId`
     /// proposed `Trade`
-    function trade(uint256 _askId, Trade calldata t) external {
+    function trade(
+        uint256 _askId,
+        Trade calldata t
+    ) external onlyRoles(t.role) {
+        if (doesTradeExist[_askId][t.resource]) revert DuplicativeTrade();
+
         // Check if `Ask` is fulfilled.
         if (asks[_askId].fulfilled) revert InvalidTrade();
 
-        // Check if owner of `t.resource` is from `msg.sender`.
-        (address _bulletin, uint256 _resourceId) = decodeAsset(t.resource);
-        if (_bulletin != address(0) && _resourceId != 0) {
+        // Check if `t.resource` is a `Resource`.
+        // resource of `Ask` may offer feedback on `Resource` after a trade is settled.
+        if (bytes32(t.resource).length > 0) {
+            (address _bulletin, uint256 _resourceId) = decodeAsset(t.resource);
             Resource memory r = IBulletin(_bulletin).getResource(_resourceId);
-            if (r.owner != msg.sender) revert InvalidOp();
+            if (r.owner != msg.sender) revert InvalidOriginalPoster();
             if (!r.active) revert ResourceNotActive();
 
             unchecked {
                 trades[_askId][++tradeIds[_askId]] = Trade({
                     approved: false,
-                    timestamp: uint40(block.timestamp),
+                    role: t.role,
                     resource: t.resource,
                     feedback: t.feedback,
                     data: t.data
@@ -107,8 +114,21 @@ contract Bulletin is OwnableRoles, IBulletin {
 
             emit TradeAdded(_askId, t.resource);
         } else {
-            revert ResourceNotValid();
+            // Otherwise, `msg.sender` becomes `Resource`.
+            unchecked {
+                trades[_askId][++tradeIds[_askId]] = Trade({
+                    approved: true,
+                    role: t.role,
+                    resource: bytes32(uint256(uint160(msg.sender))),
+                    feedback: t.feedback,
+                    data: t.data
+                });
+            }
+
+            emit TradeAdded(_askId, t.resource);
         }
+
+        doesTradeExist[_askId][t.resource] = true;
     }
 
     /* -------------------------------------------------------------------------- */
@@ -119,7 +139,7 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     function updateAsk(uint256 _askId, Ask calldata a) external payable {
         Ask memory _a = asks[_askId];
-        if (_a.owner != msg.sender) revert InvalidOp();
+        if (_a.owner != msg.sender) revert InvalidOriginalPoster();
         if (_a.fulfilled) revert AlreadyFulfilled();
 
         if (_a.drop != a.drop) {
@@ -134,7 +154,7 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     function withdrawAsk(uint256 _askId) external {
         Ask memory a = asks[_askId];
-        if (a.owner != msg.sender) revert InvalidOp();
+        if (a.owner != msg.sender) revert InvalidOriginalPoster();
         if (a.fulfilled) revert AlreadyFulfilled();
 
         route(a.currency, address(this), a.owner, a.drop);
@@ -143,17 +163,19 @@ contract Bulletin is OwnableRoles, IBulletin {
     }
 
     function settleAsk(
-        uint256 _askId,
+        uint40 _askId,
+        uint40 role,
         uint16[] calldata percentages
-    ) public checkSum(percentages) {
-        _settleAsk(_askId, percentages);
+    ) public {
+        checkSum(percentages);
+        _settleAsk(_askId, role, percentages);
     }
 
     /// @notice Resource
 
     function updateResource(uint256 _resourceId, Resource calldata r) external {
         Resource memory _r = resources[_resourceId];
-        if (_r.owner != msg.sender) revert InvalidOp();
+        if (_r.owner != msg.sender) revert InvalidOriginalPoster();
 
         _setResource(_resourceId, r);
     }
@@ -247,31 +269,32 @@ contract Bulletin is OwnableRoles, IBulletin {
         Ask memory a = asks[_askId];
 
         // Check original poster.
-        if (a.owner != msg.sender) revert InvalidOp();
+        if (a.owner != msg.sender) revert InvalidOriginalPoster();
 
         // Check if `Ask` is already fulfilled.
         if (a.fulfilled) revert InvalidTrade();
 
-        // Check if trade is made.
-        if (trades[_askId][tradeId].timestamp == 0) revert NothingToTrade();
-
         // Aprove trade.
         trades[_askId][tradeId].approved = approved;
-        trades[_askId][tradeId].timestamp = uint40(block.timestamp);
 
         emit TradeApproved(_askId);
     }
 
     function _settleAsk(
-        uint256 _askId,
+        uint40 _askId,
+        uint40 role,
         uint16[] calldata percentages
     ) internal {
         // Throw when owners mismatch.
         Ask memory a = asks[_askId];
-        if (a.owner != msg.sender) revert InvalidOp();
+        if (a.owner != msg.sender) revert InvalidOriginalPoster();
 
         // Tally and retrieve approved trades.
-        Trade[] memory _trades = filterTrades(_askId, bytes32("approved"), 0);
+        Trade[] memory _trades = filterTrades(
+            _askId,
+            bytes32("approved"),
+            role
+        );
 
         // Throw when number of percentages does not match number of approved trades.
         if (_trades.length != percentages.length) revert SettlementMismatch();
@@ -334,7 +357,7 @@ contract Bulletin is OwnableRoles, IBulletin {
     function filterTrades(
         uint256 id,
         bytes32 key,
-        uint40 time
+        uint40 role
     ) public view returns (Trade[] memory _trades) {
         // Declare for use.
         Trade memory t;
@@ -351,8 +374,8 @@ contract Bulletin is OwnableRoles, IBulletin {
 
                 if (key == "approved") {
                     (t.approved) ? _trades[i - 1] = t : t;
-                } else if (key == "timestamp") {
-                    (time > t.timestamp) ? _trades[i - 1] = t : t;
+                } else if (key == "role") {
+                    (role == t.role) ? _trades[i - 1] = t : t;
                 } else {
                     t;
                 }

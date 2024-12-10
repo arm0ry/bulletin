@@ -13,8 +13,8 @@ interface IBulletin {
      */
     struct Ask {
         bool fulfilled;
+        uint40 role;
         address owner;
-        uint256 role;
         string title;
         string detail;
         address currency;
@@ -26,7 +26,7 @@ interface IBulletin {
      */
     struct Trade {
         bool approved;
-        uint40 timestamp; // accepted ? trade accepted : trade created
+        uint40 role;
         bytes32 resource; // assembly(bulletin, askId/resourceId)
         string feedback; // commentary
         bytes data; // used for responses, externalities, etc.
@@ -68,7 +68,8 @@ interface IBulletin {
     /* -------------------------------------------------------------------------- */
 
     error InsufficientAmount();
-    error InvalidOp();
+    error InvalidOriginalPoster();
+    error DuplicativeTrade();
     error InvalidTrade();
     error AlreadyFulfilled();
     error SettlementMismatch();
@@ -76,7 +77,6 @@ interface IBulletin {
     error CannotComment();
     error ResourceNotActive();
     error ResourceNotValid();
-    error NothingToTrade();
 
     /* -------------------------------------------------------------------------- */
     /*                     Public / External Write Functions.                     */
@@ -88,7 +88,11 @@ interface IBulletin {
 
     function updateAsk(uint256 askId, Ask calldata a) external payable;
     function withdrawAsk(uint256 askId) external;
-    function settleAsk(uint256 _askId, uint16[] calldata percentages) external;
+    function settleAsk(
+        uint40 _askId,
+        uint40 role,
+        uint16[] calldata percentages
+    ) external;
     function updateResource(uint256 _resourceId, Resource calldata r) external;
     function approveTrade(uint256 _askId, uint256 tradeId) external;
     function rejectTrade(uint256 _askId, uint256 tradeId) external;
@@ -124,7 +128,7 @@ interface IBulletin {
     function filterTrades(
         uint256 id,
         bytes32 key,
-        uint40 time
+        uint40 role
     ) external returns (Trade[] memory _trades);
 
     /* -------------------------------------------------------------------------- */

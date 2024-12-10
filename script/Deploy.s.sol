@@ -17,8 +17,8 @@ contract Deploy is Script {
     error Invalid();
 
     // Constant.
-    bytes constant BYTES = bytes(string("BYTES"));
-    bytes32 constant TEST = "TEST";
+    bytes32 constant TEST_BYTES32 = "TEST";
+    string constant TEST_STRING = "TEST";
 
     // Contracts.
     address payable bulletinAddr = payable(address(0));
@@ -47,10 +47,22 @@ contract Deploy is Script {
 
         vm.startBroadcast(privateKey);
 
-        deployBulletin(
-            address(0x21C424249Fc983513413e702C6C61D83e92ea9FC),
-            address(0x4744cda32bE7b3e75b9334001da9ED21789d4c0d)
-        );
+        // deployBulletin(
+        //     address(0x21C424249Fc983513413e702C6C61D83e92ea9FC),
+        //     address(0x4744cda32bE7b3e75b9334001da9ED21789d4c0d)
+        // );
+
+        IBulletin.Ask memory a = IBulletin.Ask({
+            fulfilled: true,
+            owner: address(0x4744cda32bE7b3e75b9334001da9ED21789d4c0d),
+            role: 0,
+            title: TEST_STRING,
+            detail: TEST_STRING,
+            currency: address(0),
+            drop: 0 ether
+        });
+        Bulletin(payable(address(0x4AEA4050397638F1A701B528E4Ed8De8402D2AE4)))
+            .ask(a);
 
         vm.stopBroadcast();
     }
@@ -68,9 +80,9 @@ contract Deploy is Script {
         delete bulletinAddr;
 
         if (factory != address(0)) {
-            BulletinFactory(factoryAddr).deployBulletin(TEST);
+            BulletinFactory(factoryAddr).deployBulletin(TEST_BYTES32);
             bulletinAddr = payable(
-                BulletinFactory(factoryAddr).determineBulletin(TEST)
+                BulletinFactory(factoryAddr).determineBulletin(TEST_BYTES32)
             );
         } else {
             bulletinAddr = payable(address(new Bulletin()));
