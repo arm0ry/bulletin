@@ -32,7 +32,7 @@ contract Bulletin is OwnableRoles, IBulletin {
     // Mappings by `askId`.
     mapping(uint256 => Ask) public asks;
     mapping(uint256 => uint256) public tradeIds;
-    mapping(uint256 => mapping(bytes32 => bool)) public doesTradeExist;
+    mapping(uint256 => mapping(address => bool)) public doesTradeExist;
     mapping(uint256 => mapping(uint256 => Trade)) public trades; // Reciprocal events.
 
     // Mappings by `resourceId`.
@@ -44,7 +44,7 @@ contract Bulletin is OwnableRoles, IBulletin {
     /*                                 Modifiers.                                 */
     /* -------------------------------------------------------------------------- */
 
-    function checkSum(uint16[] calldata p) public pure {
+    modifier checkSum(uint16[] calldata p) {
         // Add up all percentages.
         uint256 totalPercentage;
         for (uint256 i; i < p.length; ++i) {
@@ -54,6 +54,8 @@ contract Bulletin is OwnableRoles, IBulletin {
         // Throw when total percentage does not equal to TEN_THOUSAND.
         if (totalPercentage != TEN_THOUSAND)
             revert TotalPercentageMustBeTenThousand();
+
+        _;
     }
 
     /* -------------------------------------------------------------------------- */
@@ -89,46 +91,34 @@ contract Bulletin is OwnableRoles, IBulletin {
         uint256 _askId,
         Trade calldata t
     ) external onlyRoles(t.role) {
-        if (doesTradeExist[_askId][t.resource]) revert DuplicativeTrade();
+        if (doesTradeExist[_askId][t.proposer]) revert DuplicativeTrade();
 
         // Check if `Ask` is fulfilled.
         if (asks[_askId].fulfilled) revert InvalidTrade();
 
         // Check if `t.resource` is a `Resource`.
-        // resource of `Ask` may offer feedback on `Resource` after a trade is settled.
-        if (bytes32(t.resource).length > 0) {
+        // Owner of `Ask` may offer feedback on `Resource` after trade is settled.
+        if (t.resource != 0) {
             (address _bulletin, uint256 _resourceId) = decodeAsset(t.resource);
             Resource memory r = IBulletin(_bulletin).getResource(_resourceId);
             if (r.owner != msg.sender) revert InvalidOriginalPoster();
             if (!r.active) revert ResourceNotActive();
-
-            unchecked {
-                trades[_askId][++tradeIds[_askId]] = Trade({
-                    approved: false,
-                    role: t.role,
-                    resource: t.resource,
-                    feedback: t.feedback,
-                    data: t.data
-                });
-            }
-
-            emit TradeAdded(_askId, t.resource);
-        } else {
-            // Otherwise, `msg.sender` becomes `Resource`.
-            unchecked {
-                trades[_askId][++tradeIds[_askId]] = Trade({
-                    approved: true,
-                    role: t.role,
-                    resource: bytes32(uint256(uint160(msg.sender))),
-                    feedback: t.feedback,
-                    data: t.data
-                });
-            }
-
-            emit TradeAdded(_askId, t.resource);
         }
 
-        doesTradeExist[_askId][t.resource] = true;
+        // Trades with `Resource` require approval before settlement.
+        unchecked {
+            trades[_askId][++tradeIds[_askId]] = Trade({
+                approved: (t.resource != 0) ? false : true,
+                role: t.role,
+                proposer: msg.sender,
+                resource: (t.resource != 0) ? t.resource : bytes32(0),
+                feedback: t.feedback,
+                data: t.data
+            });
+        }
+
+        doesTradeExist[_askId][t.proposer] = true;
+        emit TradeAdded(_askId, t.proposer);
     }
 
     /* -------------------------------------------------------------------------- */
@@ -166,8 +156,7 @@ contract Bulletin is OwnableRoles, IBulletin {
         uint40 _askId,
         uint40 role,
         uint16[] calldata percentages
-    ) public {
-        checkSum(percentages);
+    ) public checkSum(percentages) {
         _settleAsk(_askId, role, percentages);
     }
 
@@ -306,23 +295,25 @@ contract Bulletin is OwnableRoles, IBulletin {
             route(
                 a.currency,
                 address(this),
-                getResourceOwner(_trades[i].resource),
+                _trades[i].proposer,
                 (a.drop * percentages[i]) / TEN_THOUSAND
             );
 
             // Reciprocity.
-            (_bulletin, _resourceId) = decodeAsset(_trades[i].resource);
-            if (
-                Bulletin(payable(_bulletin)).hasAnyRole(
-                    address(this),
-                    BULLETIN_ROLE
-                )
-            ) {
-                IBulletin(_bulletin).incrementUsage(
-                    BULLETIN_ROLE,
-                    _resourceId,
-                    encodeAsset(address(this), uint96(_askId))
-                );
+            if (_trades[i].resource != 0) {
+                (_bulletin, _resourceId) = decodeAsset(_trades[i].resource);
+                if (
+                    Bulletin(payable(_bulletin)).hasAnyRole(
+                        address(this),
+                        BULLETIN_ROLE
+                    )
+                ) {
+                    IBulletin(_bulletin).incrementUsage(
+                        BULLETIN_ROLE,
+                        _resourceId,
+                        encodeAsset(address(this), uint96(_askId))
+                    );
+                }
             }
         }
 

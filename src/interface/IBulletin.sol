@@ -27,6 +27,7 @@ interface IBulletin {
     struct Trade {
         bool approved;
         uint40 role;
+        address proposer;
         bytes32 resource; // assembly(bulletin, askId/resourceId)
         string feedback; // commentary
         bytes data; // used for responses, externalities, etc.
@@ -59,7 +60,7 @@ interface IBulletin {
 
     event AskAdded(uint256 indexed askId);
     event ResourceAdded(uint256 indexed resourceId);
-    event TradeAdded(uint256 indexed askId, bytes32 resource);
+    event TradeAdded(uint256 indexed askId, address proposer);
     event TradeApproved(uint256 indexed askId);
     event AskSettled(uint256 indexed askId, uint256 indexed numOfTrades);
 

@@ -233,7 +233,7 @@ contract BulletinTest is Test {
         bulletin.settleAsk(askId, role, percentages);
     }
 
-    function setupTrade(
+    function setupResourceTrade(
         address user,
         uint256 askId,
         uint40 role,
@@ -243,10 +243,30 @@ contract BulletinTest is Test {
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
             role: role,
+            proposer: user,
             resource: bulletin.encodeAsset(
                 address(userBulletin),
                 uint96(userResourceId)
             ),
+            feedback: TEST,
+            data: BYTES
+        });
+        vm.prank(user);
+        bulletin.trade(askId, trade);
+        id = bulletin.tradeIds(askId);
+    }
+
+    function setupCheckin(
+        address user,
+        uint256 askId,
+        uint40 role
+    ) public payable returns (uint256 id) {
+        bytes32 r;
+        IBulletin.Trade memory trade = IBulletin.Trade({
+            approved: true,
+            role: role,
+            proposer: user,
+            resource: r,
             feedback: TEST,
             data: BYTES
         });
@@ -696,7 +716,7 @@ contract BulletinTest is Test {
         uint256 resourceId = resource(false, alice);
 
         // setup trade
-        uint256 tradeId = setupTrade(
+        uint256 tradeId = setupResourceTrade(
             alice,
             askId,
             PERMISSIONED_USER,
@@ -733,7 +753,7 @@ contract BulletinTest is Test {
         uint256 resourceId = resource(false, alice);
 
         // setup trade
-        uint256 tradeId = setupTrade(
+        uint256 tradeId = setupResourceTrade(
             alice,
             askId,
             PERMISSIONED_USER,
@@ -769,6 +789,66 @@ contract BulletinTest is Test {
         bulletin.approveTrade(_askId, _tradeId);
     }
 
+    function test_settleAsk_OneCheckin(uint256 amount) public payable {
+        vm.assume(1e20 > amount);
+        vm.assume(amount > 10_000);
+        mock.mint(owner, amount);
+
+        // setup ask
+        uint256 askId = askAndDepositCurrency(true, owner, amount);
+
+        // grant PERMISSIONED role
+        grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
+
+        // grant BULLETIN role
+        grantRole(address(bulletin), owner, address(bulletin), BULLETIN_ROLE);
+
+        // setup first trade
+        setupCheckin(alice, askId, PERMISSIONED_USER);
+
+        // settle ask
+        uint16[] memory perc = new uint16[](1);
+        perc[0] = 10000;
+        settleAsk(owner, uint40(askId), uint40(PERMISSIONED_USER), perc);
+
+        assertEq(MockERC20(mock).balanceOf(address(bulletin)), 0);
+        assertEq(MockERC20(mock).balanceOf(alice), amount);
+    }
+
+    function test_settleAsk_TwoCheckins(uint256 amount) public payable {
+        vm.assume(1e20 > amount);
+        vm.assume(amount > 10_000);
+        mock.mint(owner, amount);
+
+        // setup ask
+        uint256 askId = askAndDepositCurrency(true, owner, amount);
+
+        // grant PERMISSIONED role
+        grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
+        grantRole(address(bulletin), owner, bob, PERMISSIONED_USER);
+
+        // grant BULLETIN role
+        grantRole(address(bulletin), owner, address(bulletin), BULLETIN_ROLE);
+
+        // setup first trade
+        setupCheckin(alice, askId, PERMISSIONED_USER);
+
+        // setup second trade
+        setupCheckin(bob, askId, PERMISSIONED_USER);
+
+        uint16[] memory perc = new uint16[](2);
+        perc[0] = 6000;
+        perc[1] = 4000;
+        settleAsk(owner, uint40(askId), PERMISSIONED_USER, perc);
+
+        assertEq(
+            MockERC20(mock).balanceOf(address(bulletin)),
+            amount - (amount * 6000) / 10000 - (amount * 4000) / 10000
+        );
+        assertEq(MockERC20(mock).balanceOf(alice), (amount * 6000) / 10000);
+        assertEq(MockERC20(mock).balanceOf(bob), (amount * 4000) / 10000);
+    }
+
     function test_settleAsk_OneTrade(uint256 amount) public payable {
         vm.assume(1e20 > amount);
         vm.assume(amount > 10_000);
@@ -787,7 +867,7 @@ contract BulletinTest is Test {
         uint256 resourceId = resource(false, alice);
 
         // setup first trade
-        uint256 tradeId = setupTrade(
+        uint256 tradeId = setupResourceTrade(
             alice,
             askId,
             PERMISSIONED_USER,
@@ -829,7 +909,7 @@ contract BulletinTest is Test {
         uint256 resourceId = resource(false, alice);
 
         // setup first trade
-        uint256 tradeId = setupTrade(
+        uint256 tradeId = setupResourceTrade(
             alice,
             askId,
             PERMISSIONED_USER,
@@ -844,7 +924,7 @@ contract BulletinTest is Test {
         uint256 resourceId2 = resource(false, bob);
 
         // setup second trade
-        tradeId = setupTrade(
+        tradeId = setupResourceTrade(
             bob,
             askId,
             PERMISSIONED_USER,
@@ -901,7 +981,7 @@ contract BulletinTest is Test {
         uint256 resourceId = resource(false, alice);
 
         // setup first trade
-        uint256 tradeId = setupTrade(
+        uint256 tradeId = setupResourceTrade(
             alice,
             askId,
             PERMISSIONED_USER,
@@ -916,7 +996,7 @@ contract BulletinTest is Test {
         uint256 resourceId2 = resource(false, bob);
 
         // setup second trade
-        tradeId = setupTrade(
+        tradeId = setupResourceTrade(
             bob,
             askId,
             PERMISSIONED_USER,
@@ -931,7 +1011,7 @@ contract BulletinTest is Test {
         uint256 resourceId3 = resource(false, charlie);
 
         // setup third trade
-        tradeId = setupTrade(
+        tradeId = setupResourceTrade(
             charlie,
             askId,
             PERMISSIONED_USER,
@@ -1017,6 +1097,7 @@ contract BulletinTest is Test {
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
             role: PERMISSIONED_USER,
+            proposer: alice,
             resource: bulletin.encodeAsset(address(bulletin2), uint96(1)),
             feedback: TEST,
             data: BYTES
@@ -1044,6 +1125,7 @@ contract BulletinTest is Test {
         trade = IBulletin.Trade({
             approved: true,
             role: PERMISSIONED_USER,
+            proposer: bob,
             resource: bulletin.encodeAsset(address(bulletin3), uint96(1)),
             feedback: TEST,
             data: BYTES
