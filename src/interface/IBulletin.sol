@@ -91,6 +91,7 @@ interface IBulletin {
     function withdrawAsk(uint256 askId) external;
     function settleAsk(
         uint40 _askId,
+        bool approved,
         uint40 role,
         uint16[] calldata percentages
     ) external;
@@ -128,7 +129,7 @@ interface IBulletin {
 
     function filterTrades(
         uint256 id,
-        bytes32 key,
+        bool approved,
         uint40 role
     ) external returns (Trade[] memory _trades);
 

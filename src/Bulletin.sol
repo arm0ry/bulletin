@@ -108,10 +108,10 @@ contract Bulletin is OwnableRoles, IBulletin {
         // Trades with `Resource` require approval before settlement.
         unchecked {
             trades[_askId][++tradeIds[_askId]] = Trade({
-                approved: (t.resource != 0) ? false : true,
+                approved: false,
                 role: t.role,
                 proposer: msg.sender,
-                resource: (t.resource != 0) ? t.resource : bytes32(0),
+                resource: t.resource,
                 feedback: t.feedback,
                 data: t.data
             });
@@ -154,10 +154,11 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     function settleAsk(
         uint40 _askId,
+        bool approved,
         uint40 role,
         uint16[] calldata percentages
     ) public checkSum(percentages) {
-        _settleAsk(_askId, role, percentages);
+        _settleAsk(_askId, approved, role, percentages);
     }
 
     /// @notice Resource
@@ -271,6 +272,7 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     function _settleAsk(
         uint40 _askId,
+        bool approved,
         uint40 role,
         uint16[] calldata percentages
     ) internal {
@@ -279,11 +281,7 @@ contract Bulletin is OwnableRoles, IBulletin {
         if (a.owner != msg.sender) revert InvalidOriginalPoster();
 
         // Tally and retrieve approved trades.
-        Trade[] memory _trades = filterTrades(
-            _askId,
-            bytes32("approved"),
-            role
-        );
+        Trade[] memory _trades = filterTrades(_askId, approved, role);
 
         // Throw when number of percentages does not match number of approved trades.
         if (_trades.length != percentages.length) revert SettlementMismatch();
@@ -347,7 +345,7 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     function filterTrades(
         uint256 id,
-        bytes32 key,
+        bool approved,
         uint40 role
     ) public view returns (Trade[] memory _trades) {
         // Declare for use.
@@ -363,13 +361,9 @@ contract Bulletin is OwnableRoles, IBulletin {
                 // Retrieve trade.
                 t = trades[id][i];
 
-                if (key == "approved") {
-                    (t.approved) ? _trades[i - 1] = t : t;
-                } else if (key == "role") {
-                    (role == t.role) ? _trades[i - 1] = t : t;
-                } else {
-                    t;
-                }
+                (approved == t.approved && role == t.role)
+                    ? _trades[i - 1] = t
+                    : t;
             }
         }
     }

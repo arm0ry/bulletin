@@ -230,7 +230,7 @@ contract BulletinTest is Test {
         uint16[] memory percentages
     ) public payable {
         vm.prank(op);
-        bulletin.settleAsk(askId, role, percentages);
+        bulletin.settleAsk(askId, true, role, percentages);
     }
 
     function setupResourceTrade(
@@ -804,7 +804,10 @@ contract BulletinTest is Test {
         grantRole(address(bulletin), owner, address(bulletin), BULLETIN_ROLE);
 
         // setup first trade
-        setupCheckin(alice, askId, PERMISSIONED_USER);
+        uint256 tradeId = setupCheckin(alice, askId, PERMISSIONED_USER);
+
+        // approve first trade
+        approveTrade(owner, askId, tradeId);
 
         // settle ask
         uint16[] memory perc = new uint16[](1);
@@ -831,10 +834,16 @@ contract BulletinTest is Test {
         grantRole(address(bulletin), owner, address(bulletin), BULLETIN_ROLE);
 
         // setup first trade
-        setupCheckin(alice, askId, PERMISSIONED_USER);
+        uint256 tradeId = setupCheckin(alice, askId, PERMISSIONED_USER);
+
+        // approve first trade
+        approveTrade(owner, askId, tradeId);
 
         // setup second trade
-        setupCheckin(bob, askId, PERMISSIONED_USER);
+        tradeId = setupCheckin(bob, askId, PERMISSIONED_USER);
+
+        // approve second trade
+        approveTrade(owner, askId, tradeId);
 
         uint16[] memory perc = new uint16[](2);
         perc[0] = 6000;
