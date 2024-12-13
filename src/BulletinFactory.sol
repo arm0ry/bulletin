@@ -59,7 +59,8 @@ contract BulletinFactory {
     }
 
     function deployBulletin(
-        bytes32 name // create2 salt as used in `determineBulletin()`.
+        bytes32 name, // create2 salt as used in `determineBulletin()`.
+        address owner
     ) public payable virtual returns (address) {
         // Determine bulletin address.
         address payable bulletin = payable(
@@ -67,7 +68,7 @@ contract BulletinFactory {
         );
 
         // Initialize `msg.sender` as bulletin owner.
-        Bulletin(bulletin).init(msg.sender);
+        Bulletin(bulletin).init(owner);
 
         // Store bulletin by bulletinId.
         unchecked {
@@ -75,7 +76,7 @@ contract BulletinFactory {
             bulletins[bulletinId] = bulletin;
         }
 
-        emit Deployed(bulletinId, bulletin, msg.sender);
+        emit Deployed(bulletinId, bulletin, owner);
 
         return bulletin;
     }

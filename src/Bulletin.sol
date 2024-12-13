@@ -17,10 +17,10 @@ contract Bulletin is OwnableRoles, IBulletin {
     uint16 public constant TEN_THOUSAND = 10_000;
 
     /// The permissioned role to call `incrementUsage()`.
-    uint40 public constant BULLETIN_ROLE = 1 << 1;
+    uint40 internal constant BULLETIN_ROLE = 1 << 0;
 
-    /// The permissioned role reserved for trade agents.
-    uint40 public constant AGENT_ROLE = 1 << 2;
+    /// The permissioned role reserved for autonomous agents.
+    uint40 internal constant AGENT_ROLE = 1 << 1;
 
     /* -------------------------------------------------------------------------- */
     /*                                  Storage.                                  */
@@ -70,8 +70,10 @@ contract Bulletin is OwnableRoles, IBulletin {
     /*                                   Assets.                                  */
     /* -------------------------------------------------------------------------- */
 
-    function ask(Ask calldata a) external payable onlyOwnerOrRoles(a.role) {
-        // Transfer currency drop to address(this).
+    function ask(Ask calldata a) external payable {
+        if (a.owner != msg.sender) revert Unauthorized();
+
+        // Transfer currency drop.
         route(a.currency, msg.sender, address(this), a.drop);
 
         unchecked {
@@ -79,7 +81,25 @@ contract Bulletin is OwnableRoles, IBulletin {
         }
     }
 
-    function resource(Resource calldata r) external onlyOwnerOrRoles(r.role) {
+    function askByAgent(Ask calldata a) external payable onlyRoles(AGENT_ROLE) {
+        // Transfer currency drop.
+        route(a.currency, a.owner, address(this), a.drop);
+
+        unchecked {
+            _setAsk(++askId, a);
+        }
+    }
+
+    function resource(Resource calldata r) external {
+        if (r.owner != msg.sender) revert Unauthorized();
+        unchecked {
+            _setResource(++resourceId, r);
+        }
+    }
+
+    function resourceByAgent(
+        Resource calldata r
+    ) external onlyRoles(AGENT_ROLE) {
         unchecked {
             _setResource(++resourceId, r);
         }
@@ -87,10 +107,8 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     /// target `askId`
     /// proposed `Trade`
-    function trade(
-        uint256 _askId,
-        Trade calldata t
-    ) external onlyRoles(t.role) {
+    function trade(uint256 _askId, Trade calldata t) external {
+        if (t.proposer != msg.sender) revert Unauthorized();
         if (doesTradeExist[_askId][t.proposer]) revert DuplicativeTrade();
 
         // Check if `Ask` is fulfilled.
@@ -109,8 +127,12 @@ contract Bulletin is OwnableRoles, IBulletin {
         unchecked {
             trades[_askId][++tradeIds[_askId]] = Trade({
                 approved: false,
-                role: t.role,
-                proposer: msg.sender,
+                role: uint40(
+                    (t.proposer == owner())
+                        ? uint256(_OWNER_SLOT)
+                        : rolesOf(msg.sender)
+                ),
+                proposer: t.proposer,
                 resource: t.resource,
                 feedback: t.feedback,
                 data: t.data
@@ -184,10 +206,9 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     // Only other Bulletins can access
     function incrementUsage(
-        uint256 role,
         uint256 _resourceId,
         bytes32 bulletinAsk // encodeAsset(address(bulletin), uint96(askId))
-    ) public onlyRoles(role) {
+    ) public onlyRoles(BULLETIN_ROLE) {
         unchecked {
             usages[_resourceId][++usageIds[_resourceId]] = Usage({
                 ask: bulletinAsk,
@@ -224,10 +245,10 @@ contract Bulletin is OwnableRoles, IBulletin {
         // Store ask.
         asks[_askId] = Ask({
             fulfilled: false,
-            role: (msg.sender == owner())
-                ? uint40(uint256(_OWNER_SLOT))
-                : a.role,
-            owner: (msg.sender == owner()) ? msg.sender : a.owner,
+            role: uint40(
+                (a.owner == owner()) ? uint256(_OWNER_SLOT) : rolesOf(a.owner)
+            ),
+            owner: a.owner,
             title: a.title,
             detail: a.detail,
             currency: a.currency,
@@ -240,10 +261,10 @@ contract Bulletin is OwnableRoles, IBulletin {
     function _setResource(uint256 _resourceId, Resource calldata r) internal {
         resources[_resourceId] = Resource({
             active: r.active,
-            role: (msg.sender == owner())
-                ? uint40(uint256(_OWNER_SLOT))
-                : r.role,
-            owner: (msg.sender == owner()) ? msg.sender : r.owner,
+            role: uint40(
+                (r.owner == owner()) ? uint256(_OWNER_SLOT) : rolesOf(r.owner)
+            ),
+            owner: r.owner,
             title: r.title,
             detail: r.detail
         });
@@ -267,7 +288,7 @@ contract Bulletin is OwnableRoles, IBulletin {
         // Aprove trade.
         trades[_askId][tradeId].approved = approved;
 
-        emit TradeApproved(_askId);
+        emit TradeProcessed(_askId, tradeId, approved);
     }
 
     function _settleAsk(
@@ -307,7 +328,6 @@ contract Bulletin is OwnableRoles, IBulletin {
                     )
                 ) {
                     IBulletin(_bulletin).incrementUsage(
-                        BULLETIN_ROLE,
                         _resourceId,
                         encodeAsset(address(this), uint96(_askId))
                     );
@@ -315,7 +335,7 @@ contract Bulletin is OwnableRoles, IBulletin {
             }
         }
 
-        // Mark ask as fulfilled.
+        // Mark `Ask` as fulfilled.
         asks[_askId].fulfilled = true;
 
         emit AskSettled(_askId, _trades.length);

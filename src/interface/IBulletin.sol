@@ -61,7 +61,7 @@ interface IBulletin {
     event AskAdded(uint256 indexed askId);
     event ResourceAdded(uint256 indexed resourceId);
     event TradeAdded(uint256 indexed askId, address proposer);
-    event TradeApproved(uint256 indexed askId);
+    event TradeProcessed(uint256 indexed askId, uint256 tradeId, bool approved);
     event AskSettled(uint256 indexed askId, uint256 indexed numOfTrades);
 
     /* -------------------------------------------------------------------------- */
@@ -99,7 +99,6 @@ interface IBulletin {
     function approveTrade(uint256 _askId, uint256 tradeId) external;
     function rejectTrade(uint256 _askId, uint256 tradeId) external;
     function incrementUsage(
-        uint256 role,
         uint256 resourceId,
         bytes32 bulletinAsk // encodeAsset(address(bulletin), uint96(askId))
     ) external;
