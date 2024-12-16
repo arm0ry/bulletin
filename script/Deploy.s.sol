@@ -21,7 +21,8 @@ contract Deploy is Script {
     string constant TEST_STRING = "TEST";
 
     // Contracts.
-    address payable bulletinAddr = payable(address(0));
+    address payable bulletinAddr =
+        payable(address(0x49d55dcb5497494d8a3f896ab75f0c986c0a16a8));
     address factoryAddr = address(0);
 
     // Tokens.
@@ -35,8 +36,9 @@ contract Deploy is Script {
     address user3 = address(0x85E70769d04Be1C9d7C3c373b98BD9929f61F428);
     address gasbot = address(0x7Cf60ec5A5541b7d4073F795a67A75E383F3FFFf);
 
-    // Logger Roles.
-    uint256 MEMBERS = 1 << 1;
+    // Bulletin Roles.
+    uint40 PERMISSIONED = 1 << 1;
+    uint40 MEMBER_ROLE = 1 << 2;
 
     /// @notice The main script entrypoint.
     function run() external {
@@ -47,22 +49,38 @@ contract Deploy is Script {
 
         vm.startBroadcast(privateKey);
 
-        // deployBulletin(
-        //     address(0x21C424249Fc983513413e702C6C61D83e92ea9FC),
-        //     address(0x4744cda32bE7b3e75b9334001da9ED21789d4c0d)
-        // );
+        // Grant permissions
+        // Bulletin(bulletinAddr).grantRoles(user2, PERMISSIONED);
 
+        // Approve trades
+        // Bulletin(bulletinAddr).approveTrade(1, 1);
+
+        // factoryAddr = deployBulletinFactory();
+        // deployBulletin(factoryAddr, user1);
+
+        // // todo: limited to visitors
         IBulletin.Ask memory a = IBulletin.Ask({
             fulfilled: true,
             owner: address(0x4744cda32bE7b3e75b9334001da9ED21789d4c0d),
-            role: 0,
-            title: TEST_STRING,
-            detail: TEST_STRING,
+            role: PERMISSIONED,
+            title: "Check-in",
+            detail: "Prerequisite: valid Ethereum wallet address",
             currency: address(0),
             drop: 0 ether
         });
-        Bulletin(payable(address(0x4AEA4050397638F1A701B528E4Ed8De8402D2AE4)))
-            .ask(a);
+        Bulletin(bulletinAddr).askByAgent(a);
+
+        // todo: limited to project owners
+        a = IBulletin.Ask({
+            fulfilled: true,
+            owner: address(0x4744cda32bE7b3e75b9334001da9ED21789d4c0d),
+            role: PERMISSIONED,
+            title: "Tally Participation",
+            detail: "Prerequisite: valid Ethereum wallet address",
+            currency: address(0),
+            drop: 0 ether
+        });
+        Bulletin(bulletinAddr).askByAgent(a);
 
         vm.stopBroadcast();
     }
@@ -80,7 +98,7 @@ contract Deploy is Script {
         delete bulletinAddr;
 
         if (factory != address(0)) {
-            BulletinFactory(factoryAddr).deployBulletin(TEST_BYTES32);
+            BulletinFactory(factoryAddr).deployBulletin(TEST_BYTES32, user);
             bulletinAddr = payable(
                 BulletinFactory(factoryAddr).determineBulletin(TEST_BYTES32)
             );
