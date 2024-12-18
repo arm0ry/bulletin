@@ -22,7 +22,7 @@ contract Deploy is Script {
 
     // Contracts.
     address payable bulletinAddr =
-        payable(address(0x49d55dcb5497494d8a3f896ab75f0c986c0a16a8));
+        payable(address(0x49D55DCB5497494D8a3F896AB75f0C986C0a16A8));
     address factoryAddr = address(0);
 
     // Tokens.
@@ -58,12 +58,12 @@ contract Deploy is Script {
         // factoryAddr = deployBulletinFactory();
         // deployBulletin(factoryAddr, user1);
 
-        // // todo: limited to visitors
+        // todo: limited to visitors
         IBulletin.Ask memory a = IBulletin.Ask({
             fulfilled: true,
             owner: address(0x4744cda32bE7b3e75b9334001da9ED21789d4c0d),
             role: PERMISSIONED,
-            title: "Check-in",
+            title: unicode"大松報到",
             detail: "Prerequisite: valid Ethereum wallet address",
             currency: address(0),
             drop: 0 ether
@@ -75,7 +75,7 @@ contract Deploy is Script {
             fulfilled: true,
             owner: address(0x4744cda32bE7b3e75b9334001da9ED21789d4c0d),
             role: PERMISSIONED,
-            title: "Tally Participation",
+            title: unicode"坑主統計",
             detail: "Prerequisite: valid Ethereum wallet address",
             currency: address(0),
             drop: 0 ether

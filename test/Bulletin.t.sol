@@ -29,7 +29,7 @@ contract BulletinTest is Test {
     /// @dev Roles.
     bytes32 internal constant _OWNER_SLOT =
         0xffffffffffffffffffffffffffffffffffffffffffffffffffffffff74873927;
-    uint40 public constant BULLETIN_ROLE = 1 << 1;
+    uint40 public constant BULLETIN_ROLE = 1 << 0;
     uint40 public constant PERMISSIONED_USER = 1 << 2;
 
     /// @dev Mock Data.
@@ -665,7 +665,7 @@ contract BulletinTest is Test {
         IBulletin.Resource memory r = IBulletin.Resource({
             active: false,
             role: 0,
-            owner: alice,
+            owner: owner,
             title: TEST2,
             detail: TEST2
         });

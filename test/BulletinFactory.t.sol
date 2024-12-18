@@ -31,7 +31,7 @@ contract BulletinFactoryTest is Test {
     function testDeploy(bytes32 name, address user) public payable {
         uint256 id = factory.bulletinId();
         vm.prank(user);
-        address deployed = factory.deployBulletin(name);
+        address deployed = factory.deployBulletin(name, user);
         uint256 id_ = factory.bulletinId();
         address deployed_ = factory.bulletins(id_);
         bulletin = Bulletin(payable(deployed_));
@@ -45,7 +45,7 @@ contract BulletinFactoryTest is Test {
         bulletin = Bulletin(addr);
 
         vm.prank(user);
-        factory.deployBulletin(name);
+        factory.deployBulletin(name, user);
         assertEq(address(bulletin), addr);
         assertEq(bulletin.owner(), user);
     }
