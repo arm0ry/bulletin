@@ -6,7 +6,7 @@ import {OwnableRoles} from "src/auth/OwnableRoles.sol";
 import {SafeTransferLib} from "lib/solady/src/utils/SafeTransferLib.sol";
 
 /// @title Bulletin
-/// @notice A system to store and interact with asks and resources.
+/// @notice A system to store and interact with requests and resources.
 /// @author audsssy.eth
 contract Bulletin is OwnableRoles, IBulletin {
     /* -------------------------------------------------------------------------- */
@@ -26,19 +26,18 @@ contract Bulletin is OwnableRoles, IBulletin {
     /*                                  Storage.                                  */
     /* -------------------------------------------------------------------------- */
 
-    uint40 public askId;
+    uint40 public requestId;
     uint40 public resourceId;
 
-    // Mappings by `askId`.
-    mapping(uint256 => Ask) public asks;
-    mapping(uint256 => uint256) public tradeIds;
-    mapping(uint256 => mapping(address => bool)) public doesTradeExist;
-    mapping(uint256 => mapping(uint256 => Trade)) public trades; // Reciprocal events.
+    // Mappings by `requestId`.
+    mapping(uint256 => Request) public requests;
+    mapping(uint256 => uint256) public responseIdsPerRequest;
+    mapping(uint256 => mapping(uint256 => Trade)) public responsesPerRequest; // Reciprocal events.
 
     // Mappings by `resourceId`.
     mapping(uint256 => Resource) public resources;
-    mapping(uint256 => uint256) public usageIds;
-    mapping(uint256 => mapping(uint256 => Usage)) public usages; // Reciprocal events.
+    mapping(uint256 => uint256) public exchangeIdsPerResource;
+    mapping(uint256 => mapping(uint256 => Trade)) public exchangesPerResource; // Reciprocal events.
 
     /* -------------------------------------------------------------------------- */
     /*                                 Modifiers.                                 */
@@ -58,6 +57,27 @@ contract Bulletin is OwnableRoles, IBulletin {
         _;
     }
 
+    modifier isResourceAvailable(bytes32 source) {
+        if (source != 0) {
+            (address _b, uint256 _r) = decodeAsset(source);
+            Resource memory r = IBulletin(_b).getResource(_r);
+            if (r.owner != msg.sender) revert InvalidOriginalPoster();
+            if (!r.active) revert ResourceNotActive();
+        }
+
+        _;
+    }
+
+    modifier deposit(
+        address from,
+        address to,
+        address currency,
+        uint256 amount
+    ) {
+        if (amount != 0) route(currency, from, to, amount);
+        _;
+    }
+
     /* -------------------------------------------------------------------------- */
     /*                                Constructor.                                */
     /* -------------------------------------------------------------------------- */
@@ -70,24 +90,65 @@ contract Bulletin is OwnableRoles, IBulletin {
     /*                                   Assets.                                  */
     /* -------------------------------------------------------------------------- */
 
-    function ask(Ask calldata a) external payable {
-        if (a.owner != msg.sender) revert Unauthorized();
-
-        // Transfer currency drop.
-        route(a.currency, msg.sender, address(this), a.drop);
+    function request(
+        Request calldata r
+    ) external payable deposit(r.owner, address(this), r.currency, r.drop) {
+        if (r.owner != msg.sender) revert Unauthorized();
 
         unchecked {
-            _setAsk(++askId, a);
+            _setRequest(++requestId, r);
         }
     }
 
-    function askByAgent(Ask calldata a) external payable onlyRoles(AGENT_ROLE) {
+    function askByAgent(
+        Request calldata r
+    ) external payable onlyRoles(AGENT_ROLE) {
         // Transfer currency drop.
-        route(a.currency, a.owner, address(this), a.drop);
+        route(r.currency, r.owner, address(this), r.drop);
 
         unchecked {
-            _setAsk(++askId, a);
+            _setRequest(++requestId, r);
         }
+    }
+
+    function respond(
+        uint256 _requestId,
+        uint256 responseId,
+        Trade calldata t
+    )
+        external
+        payable
+        isResourceAvailable(t.resource)
+        deposit(t.from, address(this), t.currency, t.amount)
+    {
+        // Check if `Request` is fulfilled.
+        if (requests[_requestId].fulfilled) revert AlreadyFulfilled();
+
+        if (responseId > 0) {
+            Trade memory _t = responsesPerRequest[_requestId][responseId];
+            if (_t.from != msg.sender) revert Unauthorized();
+            if (_t.approved) revert Approved();
+            if (_t.amount != 0)
+                route(_t.currency, address(this), _t.from, _t.amount);
+        } else {
+            // Create new `responseId`.
+            unchecked {
+                responseId = ++responseIdsPerRequest[_requestId];
+            }
+        }
+
+        // Store trade.
+        responsesPerRequest[_requestId][responseId] = Trade({
+            approved: false,
+            from: msg.sender,
+            resource: t.resource,
+            currency: t.currency,
+            amount: t.amount,
+            content: t.content,
+            data: t.data
+        });
+
+        emit ResponseUpdated(_requestId, responseId, t.from);
     }
 
     function resource(Resource calldata r) external {
@@ -105,149 +166,125 @@ contract Bulletin is OwnableRoles, IBulletin {
         }
     }
 
-    /// target `askId`
+    /// target `resourceId`
     /// proposed `Trade`
-    function trade(uint256 _askId, Trade calldata t) external {
-        if (t.proposer != msg.sender) revert Unauthorized();
-        if (doesTradeExist[_askId][t.proposer]) revert DuplicativeTrade();
-
-        // Check if `Ask` is fulfilled.
-        if (asks[_askId].fulfilled) revert InvalidTrade();
-
-        // Check if `t.resource` is a `Resource`.
-        // Owner of `Ask` may offer feedback on `Resource` after trade is settled.
-        if (t.resource != 0) {
-            (address _bulletin, uint256 _resourceId) = decodeAsset(t.resource);
-            Resource memory r = IBulletin(_bulletin).getResource(_resourceId);
-            if (r.owner != msg.sender) revert InvalidOriginalPoster();
-            if (!r.active) revert ResourceNotActive();
+    function exchange(
+        uint256 _resourceId,
+        uint256 exchangeId,
+        Trade calldata t
+    )
+        external
+        payable
+        isResourceAvailable(t.resource)
+        deposit(t.from, address(this), t.currency, t.amount)
+    {
+        if (exchangeId > 0) {
+            Trade memory _t = exchangesPerResource[_resourceId][exchangeId];
+            if (_t.from != msg.sender) revert Unauthorized();
+            if (_t.approved) revert Approved();
+            if (_t.amount != 0)
+                route(_t.currency, address(this), _t.from, _t.amount);
+        } else {
+            // Create new `exchangeId`.
+            unchecked {
+                exchangeId = ++exchangeIdsPerResource[_resourceId];
+            }
         }
 
-        // Trades with `Resource` require approval before settlement.
-        unchecked {
-            trades[_askId][++tradeIds[_askId]] = Trade({
-                approved: false,
-                role: uint40(
-                    (t.proposer == owner())
-                        ? uint256(_OWNER_SLOT)
-                        : rolesOf(msg.sender)
-                ),
-                proposer: t.proposer,
-                resource: t.resource,
-                feedback: t.feedback,
-                data: t.data
-            });
-        }
+        // Store trade.
+        exchangesPerResource[_resourceId][exchangeId] = Trade({
+            approved: false,
+            from: msg.sender,
+            resource: t.resource,
+            currency: t.currency,
+            amount: t.amount,
+            content: t.content,
+            data: t.data
+        });
 
-        doesTradeExist[_askId][t.proposer] = true;
-        emit TradeAdded(_askId, t.proposer);
+        emit ExchangeUpdated(_resourceId, exchangeId, t.from);
     }
 
     /* -------------------------------------------------------------------------- */
     /*                               Manage Assets.                               */
     /* -------------------------------------------------------------------------- */
 
-    /// @notice Ask
+    /// @notice Request
 
-    function updateAsk(uint256 _askId, Ask calldata a) external payable {
-        Ask memory _a = asks[_askId];
-        if (_a.owner != msg.sender) revert InvalidOriginalPoster();
-        if (_a.fulfilled) revert AlreadyFulfilled();
+    function withdrawRequest(uint256 _requestId) external {
+        Request memory r = requests[_requestId];
+        if (r.owner != msg.sender) revert InvalidOriginalPoster();
+        if (r.fulfilled) revert AlreadyFulfilled();
 
-        if (_a.drop != a.drop) {
-            route(_a.currency, address(this), _a.owner, _a.drop);
+        route(r.currency, address(this), r.owner, r.drop);
+        delete requests[_requestId];
 
-            // Transfer currency drop to address(this).
-            route(a.currency, _a.owner, address(this), a.drop);
-        }
-
-        _setAsk(_askId, a);
+        emit RequestUpdated(_requestId);
     }
 
-    function withdrawAsk(uint256 _askId) external {
-        Ask memory a = asks[_askId];
-        if (a.owner != msg.sender) revert InvalidOriginalPoster();
-        if (a.fulfilled) revert AlreadyFulfilled();
-
-        route(a.currency, address(this), a.owner, a.drop);
-        delete asks[_askId].currency;
-        delete asks[_askId].drop;
-    }
-
-    function settleAsk(
-        uint40 _askId,
+    function settleRequest(
+        uint40 _requestId,
         bool approved,
         uint40 role,
         uint16[] calldata percentages
     ) public checkSum(percentages) {
-        _settleAsk(_askId, approved, role, percentages);
+        _settleRequest(_requestId, approved, role, percentages);
     }
 
     /// @notice Resource
 
-    function updateResource(uint256 _resourceId, Resource calldata r) external {
+    function withdrawResource(uint256 _resourceId) external {
         Resource memory _r = resources[_resourceId];
         if (_r.owner != msg.sender) revert InvalidOriginalPoster();
 
-        _setResource(_resourceId, r);
+        delete resources[_resourceId];
+
+        emit ResourceUpdated(_resourceId);
     }
 
     /// @notice Trade
 
-    function approveTrade(uint256 _askId, uint256 tradeId) external {
-        _processTrade(_askId, tradeId, true);
+    function approveResponse(uint256 _requestId, uint256 responseId) external {
+        Request memory r = requests[_requestId];
+
+        // Check original poster.
+        if (r.owner != msg.sender) revert InvalidOriginalPoster();
+
+        // Check if `Request` is already fulfilled.
+        if (r.fulfilled) revert AlreadyFulfilled();
+
+        // Aprove trade.
+        responsesPerRequest[_requestId][responseId].approved = true;
+
+        emit ResponseUpdated(_requestId, responseId, msg.sender);
     }
 
-    function rejectTrade(uint256 _askId, uint256 tradeId) external {
-        _processTrade(_askId, tradeId, false);
-    }
+    function approveExchange(uint256 _resourceId, uint256 exchangeId) external {
+        // Check original poster.
+        Resource memory r = resources[_resourceId];
+        if (r.owner != msg.sender) revert InvalidOriginalPoster();
 
-    /// @notice Reciprocity
+        Trade memory t = exchangesPerResource[_resourceId][exchangeId];
+        if (!t.approved) {
+            // Aprove trade.
+            exchangesPerResource[_resourceId][exchangeId].approved = true;
 
-    // Only other Bulletins can access
-    function incrementUsage(
-        uint256 _resourceId,
-        bytes32 bulletinAsk // encodeAsset(address(bulletin), uint96(askId))
-    ) public onlyRoles(BULLETIN_ROLE) {
-        unchecked {
-            usages[_resourceId][++usageIds[_resourceId]] = Usage({
-                ask: bulletinAsk,
-                timestamp: uint40(block.timestamp),
-                feedback: "",
-                data: abi.encode(0)
-            });
+            // Accept payment.
+            if (t.amount != 0)
+                route(t.currency, address(this), r.owner, t.amount);
         }
-    }
 
-    // Users benefited from Resource can comment.
-    function comment(
-        uint256 _resourceId,
-        uint256 _usageId,
-        string calldata feedback,
-        bytes calldata data
-    ) public {
-        // Check if user is owner of `Ask`.
-        (address _bulletin, uint256 _askId) = decodeAsset(
-            usages[_resourceId][_usageId].ask
-        );
-        Ask memory a = IBulletin(_bulletin).getAsk(_askId);
-        if (a.owner != msg.sender) revert CannotComment();
-
-        usages[_resourceId][_usageId].feedback = feedback;
-        usages[_resourceId][_usageId].data = data;
+        emit ExchangeUpdated(_resourceId, exchangeId, msg.sender);
     }
 
     /* -------------------------------------------------------------------------- */
     /*                                  Internal.                                 */
     /* -------------------------------------------------------------------------- */
 
-    function _setAsk(uint256 _askId, Ask calldata a) internal {
+    function _setRequest(uint256 _requestId, Request calldata a) internal {
         // Store ask.
-        asks[_askId] = Ask({
+        requests[_requestId] = Request({
             fulfilled: false,
-            role: uint40(
-                (a.owner == owner()) ? uint256(_OWNER_SLOT) : rolesOf(a.owner)
-            ),
             owner: a.owner,
             title: a.title,
             detail: a.detail,
@@ -255,91 +292,55 @@ contract Bulletin is OwnableRoles, IBulletin {
             drop: a.drop
         });
 
-        emit AskAdded(askId);
+        emit RequestUpdated(requestId);
     }
 
     function _setResource(uint256 _resourceId, Resource calldata r) internal {
         resources[_resourceId] = Resource({
             active: r.active,
-            role: uint40(
-                (r.owner == owner()) ? uint256(_OWNER_SLOT) : rolesOf(r.owner)
-            ),
             owner: r.owner,
             title: r.title,
             detail: r.detail
         });
 
-        emit ResourceAdded(resourceId);
+        emit ResourceUpdated(resourceId);
     }
 
-    function _processTrade(
-        uint256 _askId,
-        uint256 tradeId,
-        bool approved
-    ) internal {
-        Ask memory a = asks[_askId];
-
-        // Check original poster.
-        if (a.owner != msg.sender) revert InvalidOriginalPoster();
-
-        // Check if `Ask` is already fulfilled.
-        if (a.fulfilled) revert InvalidTrade();
-
-        // Aprove trade.
-        trades[_askId][tradeId].approved = approved;
-
-        emit TradeProcessed(_askId, tradeId, approved);
-    }
-
-    function _settleAsk(
-        uint40 _askId,
+    function _settleRequest(
+        uint40 _requestId,
         bool approved,
         uint40 role,
         uint16[] calldata percentages
     ) internal {
         // Throw when owners mismatch.
-        Ask memory a = asks[_askId];
+        Request memory a = requests[_requestId];
         if (a.owner != msg.sender) revert InvalidOriginalPoster();
 
         // Tally and retrieve approved trades.
-        Trade[] memory _trades = filterTrades(_askId, approved, role);
+        Trade[] memory _trades = filterTrades(_requestId, approved, role);
 
         // Throw when number of percentages does not match number of approved trades.
         if (_trades.length != percentages.length) revert SettlementMismatch();
 
-        address _bulletin;
-        uint256 _resourceId;
         for (uint256 i; i < _trades.length; ++i) {
             // Pay resource owner.
             route(
                 a.currency,
                 address(this),
-                _trades[i].proposer,
+                responsesPerRequest[_requestId][i].from,
                 (a.drop * percentages[i]) / TEN_THOUSAND
             );
-
-            // Reciprocity.
-            if (_trades[i].resource != 0) {
-                (_bulletin, _resourceId) = decodeAsset(_trades[i].resource);
-                if (
-                    Bulletin(payable(_bulletin)).hasAnyRole(
-                        address(this),
-                        BULLETIN_ROLE
-                    )
-                ) {
-                    IBulletin(_bulletin).incrementUsage(
-                        _resourceId,
-                        encodeAsset(address(this), uint96(_askId))
-                    );
-                }
-            }
         }
 
-        // Mark `Ask` as fulfilled.
-        asks[_askId].fulfilled = true;
+        // Mark `Request` as fulfilled.
+        requests[_requestId].fulfilled = true;
 
-        emit AskSettled(_askId, _trades.length);
+        emit RequestSettled(_requestId, _trades.length);
     }
+
+    /* -------------------------------------------------------------------------- */
+    /*                                  Helpers.                                  */
+    /* -------------------------------------------------------------------------- */
 
     /// @dev Helper function to route Ether and ERC20 tokens.
     function route(
@@ -359,10 +360,6 @@ contract Bulletin is OwnableRoles, IBulletin {
         }
     }
 
-    /* -------------------------------------------------------------------------- */
-    /*                                  Helpers.                                  */
-    /* -------------------------------------------------------------------------- */
-
     function filterTrades(
         uint256 id,
         bool approved,
@@ -372,16 +369,16 @@ contract Bulletin is OwnableRoles, IBulletin {
         Trade memory t;
 
         // Retrieve trade id, or number of trades.
-        uint256 tId = tradeIds[id];
+        uint256 tId = responseIdsPerRequest[id];
 
         // If trades exist, filter and return trades based on provided `key`.
         if (tId > 0) {
             _trades = new Trade[](tId);
             for (uint256 i = 1; i <= tId; ++i) {
                 // Retrieve trade.
-                t = trades[id][i];
+                t = responsesPerRequest[id][i];
 
-                (approved == t.approved && role == t.role)
+                (approved == t.approved && hasAnyRole(t.from, role))
                     ? _trades[i - 1] = t
                     : t;
             }
@@ -410,45 +407,45 @@ contract Bulletin is OwnableRoles, IBulletin {
     /*                                 Public Get.                                */
     /* -------------------------------------------------------------------------- */
 
-    function getAsk(uint256 id) external view returns (Ask memory a) {
-        return asks[id];
+    function getRequest(uint256 id) external view returns (Request memory r) {
+        return requests[id];
     }
 
     function getResource(uint256 id) external view returns (Resource memory r) {
         return resources[id];
     }
 
-    function getResource(
-        bytes32 bulletinResource
-    ) public view returns (Resource memory r) {
-        (address _bulletin, uint256 _resourceId) = decodeAsset(
-            bulletinResource
-        );
-        r = IBulletin(_bulletin).getResource(_resourceId);
-    }
-
-    function getResourceOwner(
-        bytes32 bulletinResource
-    ) public view returns (address owner) {
-        (address _bulletin, uint256 _resourceId) = decodeAsset(
-            bulletinResource
-        );
-        Resource memory r = IBulletin(_bulletin).getResource(_resourceId);
-        owner = r.owner;
-    }
-
     function getTrade(
         uint256 id,
         uint256 tradeId
     ) external view returns (Trade memory) {
-        return trades[id][tradeId];
+        return responsesPerRequest[id][tradeId];
     }
 
-    function getUsage(
-        uint256 id,
-        uint256 usageId
-    ) external view returns (Usage memory) {
-        return usages[id][usageId];
+    function getResponseByUser(
+        uint256 _requestId,
+        address user
+    ) public view returns (uint256 tradeId, Trade memory t) {
+        uint256 length = responseIdsPerRequest[_requestId];
+        for (uint256 i = 1; i <= length; ++i) {
+            (responsesPerRequest[_requestId][i].from == user)
+                ? t = responsesPerRequest[_requestId][i]
+                : t;
+            tradeId = i;
+        }
+    }
+
+    function getExchangeByUser(
+        uint256 _resourceId,
+        address user
+    ) public view returns (uint256 tradeId, Trade memory t) {
+        uint256 length = exchangeIdsPerResource[_resourceId];
+        for (uint256 i = 1; i <= length; ++i) {
+            (exchangesPerResource[_resourceId][i].from == user)
+                ? t = exchangesPerResource[_resourceId][i]
+                : t;
+            tradeId = i;
+        }
     }
 
     receive() external payable virtual {}

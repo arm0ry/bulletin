@@ -59,10 +59,9 @@ contract Deploy is Script {
         // deployBulletin(factoryAddr, user1);
 
         // todo: limited to visitors
-        IBulletin.Ask memory a = IBulletin.Ask({
+        IBulletin.Request memory a = IBulletin.Request({
             fulfilled: true,
             owner: address(0x4744cda32bE7b3e75b9334001da9ED21789d4c0d),
-            role: PERMISSIONED,
             title: unicode"大松報到",
             detail: "Prerequisite: valid Ethereum wallet address",
             currency: address(0),
@@ -71,10 +70,9 @@ contract Deploy is Script {
         Bulletin(bulletinAddr).askByAgent(a);
 
         // todo: limited to project owners
-        a = IBulletin.Ask({
+        a = IBulletin.Request({
             fulfilled: true,
             owner: address(0x4744cda32bE7b3e75b9334001da9ED21789d4c0d),
-            role: PERMISSIONED,
             title: unicode"坑主統計",
             detail: "Prerequisite: valid Ethereum wallet address",
             currency: address(0),

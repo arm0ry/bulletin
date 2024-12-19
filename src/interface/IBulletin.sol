@@ -9,11 +9,10 @@ interface IBulletin {
     /* -------------------------------------------------------------------------- */
 
     /**
-     * @dev A struct containing all the data required for creating an Ask.
+     * @dev A struct containing all the data required for creating a request.
      */
-    struct Ask {
+    struct Request {
         bool fulfilled;
-        uint40 role;
         address owner;
         string title;
         string detail;
@@ -22,47 +21,45 @@ interface IBulletin {
     }
 
     /**
-     * @dev A struct containing all the data required for creating a Trade per Ask.
-     */
-    struct Trade {
-        bool approved;
-        uint40 role;
-        address proposer;
-        bytes32 resource; // assembly(bulletin, askId/resourceId)
-        string feedback; // commentary
-        bytes data; // used for responses, externalities, etc.
-    }
-
-    /**
-     * @dev A struct containing all the data required for creating a Resource.
+     * @dev A struct containing all the data required for providing a resource.
      */
     struct Resource {
         bool active;
-        uint40 role;
         address owner;
         string title;
         string detail;
     }
 
     /**
-     * @dev A struct containing all the data required for creating Usage per Resource.
+     * @dev A struct containing all the data required for a trade for request and resource.
      */
-    struct Usage {
-        bytes32 ask;
-        uint40 timestamp;
-        string feedback; // commentary
-        bytes data; // used for responses, externalities, etc.
+    struct Trade {
+        bool approved;
+        address from;
+        bytes32 resource;
+        address currency;
+        uint256 amount;
+        string content;
+        bytes data; // reserved for responses, externalities, etc.
     }
 
     /* -------------------------------------------------------------------------- */
     /*                                   Events.                                  */
     /* -------------------------------------------------------------------------- */
 
-    event AskAdded(uint256 indexed askId);
-    event ResourceAdded(uint256 indexed resourceId);
-    event TradeAdded(uint256 indexed askId, address proposer);
-    event TradeProcessed(uint256 indexed askId, uint256 tradeId, bool approved);
-    event AskSettled(uint256 indexed askId, uint256 indexed numOfTrades);
+    event RequestUpdated(uint256 indexed requestId);
+    event ResourceUpdated(uint256 indexed resourceId);
+    event ResponseUpdated(uint256 requestId, uint256 responseId, address from);
+    event ExchangeUpdated(uint256 resourceId, uint256 exchangeId, address from);
+    event TradeProcessed(
+        uint256 indexed requestId,
+        uint256 tradeId,
+        bool approved
+    );
+    event RequestSettled(
+        uint256 indexed requestId,
+        uint256 indexed numOfTrades
+    );
 
     /* -------------------------------------------------------------------------- */
     /*                                   Errors.                                  */
@@ -71,11 +68,10 @@ interface IBulletin {
     error InsufficientAmount();
     error InvalidOriginalPoster();
     error DuplicativeTrade();
-    error InvalidTrade();
     error AlreadyFulfilled();
+    error Approved();
     error SettlementMismatch();
     error TotalPercentageMustBeTenThousand();
-    error CannotComment();
     error ResourceNotActive();
     error ResourceNotValid();
 
@@ -83,43 +79,37 @@ interface IBulletin {
     /*                     Public / External Write Functions.                     */
     /* -------------------------------------------------------------------------- */
 
-    function ask(Ask calldata a) external payable;
+    function request(Request calldata r) external payable;
+    function respond(
+        uint256 requestId,
+        uint256 respondId,
+        Trade calldata t
+    ) external payable;
     function resource(Resource calldata r) external;
-    function trade(uint256 askId, Trade calldata t) external;
+    function exchange(
+        uint256 resourceId,
+        uint256 exchangeId,
+        Trade calldata t
+    ) external payable;
 
-    function updateAsk(uint256 askId, Ask calldata a) external payable;
-    function withdrawAsk(uint256 askId) external;
-    function settleAsk(
-        uint40 _askId,
+    function withdrawRequest(uint256 requestId) external;
+    function settleRequest(
+        uint40 _requestId,
         bool approved,
         uint40 role,
         uint16[] calldata percentages
     ) external;
-    function updateResource(uint256 _resourceId, Resource calldata r) external;
-    function approveTrade(uint256 _askId, uint256 tradeId) external;
-    function rejectTrade(uint256 _askId, uint256 tradeId) external;
-    function incrementUsage(
-        uint256 resourceId,
-        bytes32 bulletinAsk // encodeAsset(address(bulletin), uint96(askId))
-    ) external;
-    function comment(
-        uint256 _resourceId,
-        uint256 _usageId,
-        string calldata feedback,
-        bytes calldata data
-    ) external;
+    function withdrawResource(uint256 _resourceId) external;
+    function approveResponse(uint256 requestId, uint256 responseId) external;
+    function approveExchange(uint256 _resourceId, uint256 exchangeId) external;
 
     /* -------------------------------------------------------------------------- */
     /*                      Public / External View Functions.                     */
     /* -------------------------------------------------------------------------- */
 
-    function getAsk(uint256 id) external view returns (Ask memory a);
+    function getRequest(uint256 id) external view returns (Request memory r);
 
     function getResource(uint256 id) external view returns (Resource memory r);
-
-    function getResourceOwner(
-        bytes32 resource
-    ) external view returns (address owner);
 
     function getTrade(
         uint256 id,
