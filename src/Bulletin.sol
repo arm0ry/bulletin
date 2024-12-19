@@ -313,8 +313,8 @@ contract Bulletin is OwnableRoles, IBulletin {
         uint16[] calldata percentages
     ) internal {
         // Throw when owners mismatch.
-        Request memory a = requests[_requestId];
-        if (a.owner != msg.sender) revert InvalidOriginalPoster();
+        Request memory r = requests[_requestId];
+        if (r.owner != msg.sender) revert InvalidOriginalPoster();
 
         // Tally and retrieve approved trades.
         Trade[] memory _trades = filterTrades(_requestId, approved, role);
@@ -325,10 +325,10 @@ contract Bulletin is OwnableRoles, IBulletin {
         for (uint256 i; i < _trades.length; ++i) {
             // Pay resource owner.
             route(
-                a.currency,
+                r.currency,
                 address(this),
-                responsesPerRequest[_requestId][i].from,
-                (a.drop * percentages[i]) / TEN_THOUSAND
+                _trades[i].from,
+                (r.drop * percentages[i]) / TEN_THOUSAND
             );
         }
 
