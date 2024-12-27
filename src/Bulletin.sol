@@ -16,9 +16,6 @@ contract Bulletin is OwnableRoles, IBulletin {
     /// The denominator for calculating distribution.
     uint16 public constant TEN_THOUSAND = 10_000;
 
-    /// The permissioned role to call `incrementUsage()`.
-    uint40 internal constant BULLETIN_ROLE = 1 << 0;
-
     /// The permissioned role reserved for autonomous agents.
     uint40 internal constant AGENT_ROLE = 1 << 1;
 
@@ -100,7 +97,7 @@ contract Bulletin is OwnableRoles, IBulletin {
         }
     }
 
-    function askByAgent(
+    function requestByAgent(
         Request calldata r
     ) external payable onlyRoles(AGENT_ROLE) {
         // Transfer currency drop.
@@ -415,11 +412,18 @@ contract Bulletin is OwnableRoles, IBulletin {
         return resources[id];
     }
 
-    function getTrade(
-        uint256 id,
-        uint256 tradeId
+    function getResponse(
+        uint256 _requestId,
+        uint256 _responseId
     ) external view returns (Trade memory) {
-        return responsesPerRequest[id][tradeId];
+        return responsesPerRequest[_requestId][_responseId];
+    }
+
+    function getExchange(
+        uint256 _resourceId,
+        uint256 _exchangeId
+    ) external view returns (Trade memory) {
+        return exchangesPerResource[_resourceId][_exchangeId];
     }
 
     function getResponseByUser(

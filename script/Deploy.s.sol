@@ -22,7 +22,7 @@ contract Deploy is Script {
 
     // Contracts.
     address payable bulletinAddr =
-        payable(address(0x49D55DCB5497494D8a3F896AB75f0C986C0a16A8));
+        payable(address(0x35639C9C7f60CcA759cBD6A7a859818Ffa5D12f7));
     address factoryAddr = address(0);
 
     // Tokens.
@@ -67,7 +67,7 @@ contract Deploy is Script {
             currency: address(0),
             drop: 0 ether
         });
-        Bulletin(bulletinAddr).askByAgent(a);
+        Bulletin(bulletinAddr).requestByAgent(a);
 
         // todo: limited to project owners
         a = IBulletin.Request({
@@ -78,7 +78,15 @@ contract Deploy is Script {
             currency: address(0),
             drop: 0 ether
         });
-        Bulletin(bulletinAddr).askByAgent(a);
+        Bulletin(bulletinAddr).requestByAgent(a);
+
+        IBulletin.Resource memory r = IBulletin.Resource({
+            active: true,
+            owner: address(0x4744cda32bE7b3e75b9334001da9ED21789d4c0d),
+            title: unicode"鏈上大松 💗",
+            detail: ""
+        });
+        Bulletin(bulletinAddr).resourceByAgent(r);
 
         vm.stopBroadcast();
     }

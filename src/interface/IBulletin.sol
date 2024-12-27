@@ -9,7 +9,7 @@ interface IBulletin {
     /* -------------------------------------------------------------------------- */
 
     /**
-     * @dev A struct containing all the data required for creating a request.
+     * @dev A struct containing data required for creating a request.
      */
     struct Request {
         bool fulfilled;
@@ -21,7 +21,7 @@ interface IBulletin {
     }
 
     /**
-     * @dev A struct containing all the data required for providing a resource.
+     * @dev A struct containing data required for creating a resource.
      */
     struct Resource {
         bool active;
@@ -31,7 +31,7 @@ interface IBulletin {
     }
 
     /**
-     * @dev A struct containing all the data required for a trade for request and resource.
+     * @dev A struct containing data required for creating responses and exchanges.
      */
     struct Trade {
         bool approved;
@@ -111,10 +111,15 @@ interface IBulletin {
 
     function getResource(uint256 id) external view returns (Resource memory r);
 
-    function getTrade(
-        uint256 id,
-        uint256 tradeId
-    ) external view returns (Trade memory t);
+    function getResponse(
+        uint256 _requestId,
+        uint256 _responseId
+    ) external view returns (Trade memory);
+
+    function getExchange(
+        uint256 _resourceId,
+        uint256 _exchangeId
+    ) external view returns (Trade memory);
 
     function filterTrades(
         uint256 id,
