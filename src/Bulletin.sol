@@ -40,26 +40,25 @@ contract Bulletin is OwnableRoles, IBulletin {
     /*                                 Modifiers.                                 */
     /* -------------------------------------------------------------------------- */
 
-    modifier checkSum(uint16[] calldata p) {
-        // Add up all percentages.
-        uint256 totalPercentage;
-        for (uint256 i; i < p.length; ++i) {
-            totalPercentage += p[i];
-        }
+    // modifier checkSum(uint16[] calldata p) {
+    //     // Add up all percentages.
+    //     uint256 totalPercentage;
+    //     for (uint256 i; i < p.length; ++i) {
+    //         totalPercentage += p[i];
+    //     }
 
-        // Throw when total percentage does not equal to TEN_THOUSAND.
-        if (totalPercentage != TEN_THOUSAND)
-            revert TotalPercentageMustBeTenThousand();
+    //     // Throw when total percentage does not equal to TEN_THOUSAND.
+    //     if (totalPercentage != TEN_THOUSAND)
+    //         revert TotalPercentageMustBeTenThousand();
 
-        _;
-    }
+    //     _;
+    // }
 
     modifier isResourceAvailable(bytes32 source) {
         if (source != 0) {
             (address _b, uint256 _r) = decodeAsset(source);
             Resource memory r = IBulletin(_b).getResource(_r);
-            if (r.owner != msg.sender) revert InvalidOriginalPoster();
-            if (!r.active) revert ResourceNotActive();
+            if (r.from != msg.sender) revert NotOriginalPoster();
         }
 
         _;
@@ -89,8 +88,8 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     function request(
         Request calldata r
-    ) external payable deposit(r.owner, address(this), r.currency, r.drop) {
-        if (r.owner != msg.sender) revert Unauthorized();
+    ) external payable deposit(r.from, address(this), r.currency, r.drop) {
+        if (r.from != msg.sender) revert Unauthorized();
 
         unchecked {
             _setRequest(++requestId, r);
@@ -101,7 +100,7 @@ contract Bulletin is OwnableRoles, IBulletin {
         Request calldata r
     ) external payable onlyRoles(AGENT_ROLE) {
         // Transfer currency drop.
-        route(r.currency, r.owner, address(this), r.drop);
+        route(r.currency, r.from, address(this), r.drop);
 
         unchecked {
             _setRequest(++requestId, r);
@@ -118,9 +117,6 @@ contract Bulletin is OwnableRoles, IBulletin {
         isResourceAvailable(t.resource)
         deposit(t.from, address(this), t.currency, t.amount)
     {
-        // Check if `Request` is fulfilled.
-        if (requests[_requestId].fulfilled) revert AlreadyFulfilled();
-
         if (responseId > 0) {
             Trade memory _t = responsesPerRequest[_requestId][responseId];
             if (_t.from != msg.sender) revert Unauthorized();
@@ -149,7 +145,7 @@ contract Bulletin is OwnableRoles, IBulletin {
     }
 
     function resource(Resource calldata r) external {
-        if (r.owner != msg.sender) revert Unauthorized();
+        if (r.from != msg.sender) revert Unauthorized();
         unchecked {
             _setResource(++resourceId, r);
         }
@@ -210,56 +206,79 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     function withdrawRequest(uint256 _requestId) external {
         Request memory r = requests[_requestId];
-        if (r.owner != msg.sender) revert InvalidOriginalPoster();
-        if (r.fulfilled) revert AlreadyFulfilled();
+        if (r.from != msg.sender) revert NotOriginalPoster();
 
-        route(r.currency, address(this), r.owner, r.drop);
+        route(r.currency, address(this), r.from, r.drop);
         delete requests[_requestId];
-
         emit RequestUpdated(_requestId);
     }
 
-    function settleRequest(
-        uint40 _requestId,
-        bool approved,
-        uint40 role,
-        uint16[] calldata percentages
-    ) public checkSum(percentages) {
-        _settleRequest(_requestId, approved, role, percentages);
-    }
+    // function settleRequest(
+    //     uint40 _requestId,
+    //     bool approved,
+    //     uint40 role,
+    //     uint16[] calldata percentages
+    // ) public checkSum(percentages) {
+    //     _settleRequest(_requestId, approved, role, percentages);
+    // }
 
     /// @notice Resource
 
     function withdrawResource(uint256 _resourceId) external {
         Resource memory _r = resources[_resourceId];
-        if (_r.owner != msg.sender) revert InvalidOriginalPoster();
+        if (_r.from != msg.sender) revert NotOriginalPoster();
 
         delete resources[_resourceId];
-
         emit ResourceUpdated(_resourceId);
     }
 
     /// @notice Trade
 
-    function approveResponse(uint256 _requestId, uint256 responseId) external {
+    function approveResponse(
+        uint256 _requestId,
+        uint256 responseId,
+        uint256 amount
+    ) external {
         Request memory r = requests[_requestId];
+        if (r.from != msg.sender) revert NotOriginalPoster();
 
-        // Check original poster.
-        if (r.owner != msg.sender) revert InvalidOriginalPoster();
+        if (!responsesPerRequest[_requestId][responseId].approved) {
+            // Aprove trade.
+            responsesPerRequest[_requestId][responseId].approved = true;
 
-        // Check if `Request` is already fulfilled.
-        if (r.fulfilled) revert AlreadyFulfilled();
+            // todo: check if request has enough currency to drop `amount`
+            if (amount > 0) {
+                if (amount > r.drop) revert InsufficientAmount();
+                requests[_requestId].drop = r.drop - amount;
 
-        // Aprove trade.
-        responsesPerRequest[_requestId][responseId].approved = true;
+                route(
+                    r.currency,
+                    address(this),
+                    responsesPerRequest[_requestId][responseId].from,
+                    amount
+                );
+            }
 
-        emit ResponseUpdated(_requestId, responseId, msg.sender);
+            emit ResponseUpdated(_requestId, responseId, msg.sender);
+        } else revert Approved();
+    }
+
+    function withdrawResponse(
+        uint256 _requestId,
+        uint256 _responseId
+    ) external {
+        Trade memory t = responsesPerRequest[_requestId][_responseId];
+        if (t.approved) revert Approved();
+        if (t.from != msg.sender) revert NotOriginalPoster();
+
+        route(t.currency, address(this), t.from, t.amount);
+        delete responsesPerRequest[_requestId][_responseId];
+        emit RequestUpdated(_requestId);
     }
 
     function approveExchange(uint256 _resourceId, uint256 exchangeId) external {
-        // Check original poster.
         Resource memory r = resources[_resourceId];
-        if (r.owner != msg.sender) revert InvalidOriginalPoster();
+        if (r.from != msg.sender) revert NotOriginalPoster();
 
         Trade memory t = exchangesPerResource[_resourceId][exchangeId];
         if (!t.approved) {
@@ -268,25 +287,36 @@ contract Bulletin is OwnableRoles, IBulletin {
 
             // Accept payment.
             if (t.amount != 0)
-                route(t.currency, address(this), r.owner, t.amount);
-        }
+                route(t.currency, address(this), r.from, t.amount);
 
-        emit ExchangeUpdated(_resourceId, exchangeId, msg.sender);
+            emit ExchangeUpdated(_resourceId, exchangeId, msg.sender);
+        } else revert Approved();
+    }
+
+    function withdrawExchange(
+        uint256 _resourceId,
+        uint256 _exchangeId
+    ) external {
+        Trade memory t = exchangesPerResource[_resourceId][_exchangeId];
+        if (t.approved) revert Approved();
+        if (t.from != msg.sender) revert NotOriginalPoster();
+
+        route(t.currency, address(this), t.from, t.amount);
+        delete exchangesPerResource[_resourceId][_exchangeId];
+        emit RequestUpdated(_resourceId);
     }
 
     /* -------------------------------------------------------------------------- */
     /*                                  Internal.                                 */
     /* -------------------------------------------------------------------------- */
 
-    function _setRequest(uint256 _requestId, Request calldata a) internal {
-        // Store ask.
+    function _setRequest(uint256 _requestId, Request calldata r) internal {
         requests[_requestId] = Request({
-            fulfilled: false,
-            owner: a.owner,
-            title: a.title,
-            detail: a.detail,
-            currency: a.currency,
-            drop: a.drop
+            from: r.from,
+            title: r.title,
+            detail: r.detail,
+            currency: r.currency,
+            drop: r.drop
         });
 
         emit RequestUpdated(requestId);
@@ -294,8 +324,7 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     function _setResource(uint256 _resourceId, Resource calldata r) internal {
         resources[_resourceId] = Resource({
-            active: r.active,
-            owner: r.owner,
+            from: r.from,
             title: r.title,
             detail: r.detail
         });
@@ -303,37 +332,37 @@ contract Bulletin is OwnableRoles, IBulletin {
         emit ResourceUpdated(resourceId);
     }
 
-    function _settleRequest(
-        uint40 _requestId,
-        bool approved,
-        uint40 role,
-        uint16[] calldata percentages
-    ) internal {
-        // Throw when owners mismatch.
-        Request memory r = requests[_requestId];
-        if (r.owner != msg.sender) revert InvalidOriginalPoster();
+    // function _settleRequest(
+    //     uint40 _requestId,
+    //     bool approved,
+    //     uint40 role,
+    //     uint16[] calldata percentages
+    // ) internal {
+    //     // Throw when owners mismatch.
+    //     Request memory r = requests[_requestId];
+    //     if (r.owner != msg.sender) revert NotOriginalPoster();
 
-        // Tally and retrieve approved trades.
-        Trade[] memory _trades = filterTrades(_requestId, approved, role);
+    //     // Tally and retrieve approved trades.
+    //     Trade[] memory _trades = filterTrades(_requestId, approved, role);
 
-        // Throw when number of percentages does not match number of approved trades.
-        if (_trades.length != percentages.length) revert SettlementMismatch();
+    //     // Throw when number of percentages does not match number of approved trades.
+    //     if (_trades.length != percentages.length) revert SettlementMismatch();
 
-        for (uint256 i; i < _trades.length; ++i) {
-            // Pay resource owner.
-            route(
-                r.currency,
-                address(this),
-                _trades[i].from,
-                (r.drop * percentages[i]) / TEN_THOUSAND
-            );
-        }
+    //     for (uint256 i; i < _trades.length; ++i) {
+    //         // Pay resource owner.
+    //         route(
+    //             r.currency,
+    //             address(this),
+    //             _trades[i].from,
+    //             (r.drop * percentages[i]) / TEN_THOUSAND
+    //         );
+    //     }
 
-        // Mark `Request` as fulfilled.
-        requests[_requestId].fulfilled = true;
+    //     // Mark `Request` as fulfilled.
+    //     requests[_requestId].fulfilled = true;
 
-        emit RequestSettled(_requestId, _trades.length);
-    }
+    //     emit RequestSettled(_requestId, _trades.length);
+    // }
 
     /* -------------------------------------------------------------------------- */
     /*                                  Helpers.                                  */
@@ -357,30 +386,30 @@ contract Bulletin is OwnableRoles, IBulletin {
         }
     }
 
-    function filterTrades(
-        uint256 id,
-        bool approved,
-        uint40 role
-    ) public view returns (Trade[] memory _trades) {
-        // Declare for use.
-        Trade memory t;
+    // function filterTrades(
+    //     uint256 id,
+    //     bool approved,
+    //     uint40 role
+    // ) public view returns (Trade[] memory _trades) {
+    //     // Declare for use.
+    //     Trade memory t;
 
-        // Retrieve trade id, or number of trades.
-        uint256 tId = responseIdsPerRequest[id];
+    //     // Retrieve trade id, or number of trades.
+    //     uint256 tId = responseIdsPerRequest[id];
 
-        // If trades exist, filter and return trades based on provided `key`.
-        if (tId > 0) {
-            _trades = new Trade[](tId);
-            for (uint256 i = 1; i <= tId; ++i) {
-                // Retrieve trade.
-                t = responsesPerRequest[id][i];
+    //     // If trades exist, filter and return trades based on provided `key`.
+    //     if (tId > 0) {
+    //         _trades = new Trade[](tId);
+    //         for (uint256 i = 1; i <= tId; ++i) {
+    //             // Retrieve trade.
+    //             t = responsesPerRequest[id][i];
 
-                (approved == t.approved && hasAnyRole(t.from, role))
-                    ? _trades[i - 1] = t
-                    : t;
-            }
-        }
-    }
+    //             (approved == t.approved && hasAnyRole(t.from, role))
+    //                 ? _trades[i - 1] = t
+    //                 : t;
+    //         }
+    //     }
+    // }
 
     // Encode bulletin address and ask/resource id as asset.
     function encodeAsset(

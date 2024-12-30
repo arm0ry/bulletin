@@ -59,34 +59,31 @@ contract Deploy is Script {
         // deployBulletin(factoryAddr, user1);
 
         // todo: limited to visitors
-        IBulletin.Request memory a = IBulletin.Request({
-            fulfilled: true,
-            owner: address(0x4744cda32bE7b3e75b9334001da9ED21789d4c0d),
-            title: unicode"大松報到",
-            detail: "Prerequisite: valid Ethereum wallet address",
+        IBulletin.Request memory req = IBulletin.Request({
+            from: address(0x4744cda32bE7b3e75b9334001da9ED21789d4c0d),
+            title: unicode"65大松報到",
+            detail: "",
             currency: address(0),
             drop: 0 ether
         });
-        Bulletin(bulletinAddr).requestByAgent(a);
+        Bulletin(bulletinAddr).requestByAgent(req);
 
         // todo: limited to project owners
-        a = IBulletin.Request({
-            fulfilled: true,
-            owner: address(0x4744cda32bE7b3e75b9334001da9ED21789d4c0d),
-            title: unicode"坑主統計",
+        req = IBulletin.Request({
+            from: address(0x4744cda32bE7b3e75b9334001da9ED21789d4c0d),
+            title: unicode"回饋65大松",
             detail: "Prerequisite: valid Ethereum wallet address",
             currency: address(0),
             drop: 0 ether
         });
-        Bulletin(bulletinAddr).requestByAgent(a);
+        Bulletin(bulletinAddr).requestByAgent(req);
 
-        IBulletin.Resource memory r = IBulletin.Resource({
-            active: true,
-            owner: address(0x4744cda32bE7b3e75b9334001da9ED21789d4c0d),
-            title: unicode"鏈上大松 💗",
+        IBulletin.Resource memory res = IBulletin.Resource({
+            from: address(0x4744cda32bE7b3e75b9334001da9ED21789d4c0d),
+            title: unicode"65大松之坑主報告：鏈上大松 💗",
             detail: ""
         });
-        Bulletin(bulletinAddr).resourceByAgent(r);
+        Bulletin(bulletinAddr).resourceByAgent(res);
 
         vm.stopBroadcast();
     }

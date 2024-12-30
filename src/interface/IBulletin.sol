@@ -12,8 +12,7 @@ interface IBulletin {
      * @dev A struct containing data required for creating a request.
      */
     struct Request {
-        bool fulfilled;
-        address owner;
+        address from;
         string title;
         string detail;
         address currency;
@@ -24,8 +23,7 @@ interface IBulletin {
      * @dev A struct containing data required for creating a resource.
      */
     struct Resource {
-        bool active;
-        address owner;
+        address from;
         string title;
         string detail;
     }
@@ -66,14 +64,8 @@ interface IBulletin {
     /* -------------------------------------------------------------------------- */
 
     error InsufficientAmount();
-    error InvalidOriginalPoster();
-    error DuplicativeTrade();
-    error AlreadyFulfilled();
+    error NotOriginalPoster();
     error Approved();
-    error SettlementMismatch();
-    error TotalPercentageMustBeTenThousand();
-    error ResourceNotActive();
-    error ResourceNotValid();
 
     /* -------------------------------------------------------------------------- */
     /*                     Public / External Write Functions.                     */
@@ -93,15 +85,16 @@ interface IBulletin {
     ) external payable;
 
     function withdrawRequest(uint256 requestId) external;
-    function settleRequest(
-        uint40 _requestId,
-        bool approved,
-        uint40 role,
-        uint16[] calldata percentages
+    function withdrawResource(uint256 resourceId) external;
+    function withdrawResponse(uint256 requestId, uint256 responseId) external;
+    function withdrawExchange(uint256 resourceId, uint256 exchangeId) external;
+
+    function approveResponse(
+        uint256 requestId,
+        uint256 responseId,
+        uint256 amount
     ) external;
-    function withdrawResource(uint256 _resourceId) external;
-    function approveResponse(uint256 requestId, uint256 responseId) external;
-    function approveExchange(uint256 _resourceId, uint256 exchangeId) external;
+    function approveExchange(uint256 resourceId, uint256 exchangeId) external;
 
     /* -------------------------------------------------------------------------- */
     /*                      Public / External View Functions.                     */
@@ -112,20 +105,20 @@ interface IBulletin {
     function getResource(uint256 id) external view returns (Resource memory r);
 
     function getResponse(
-        uint256 _requestId,
-        uint256 _responseId
+        uint256 requestId,
+        uint256 responseId
     ) external view returns (Trade memory);
 
     function getExchange(
-        uint256 _resourceId,
-        uint256 _exchangeId
+        uint256 resourceId,
+        uint256 exchangeId
     ) external view returns (Trade memory);
 
-    function filterTrades(
-        uint256 id,
-        bool approved,
-        uint40 role
-    ) external returns (Trade[] memory _trades);
+    // function filterTrades(
+    //     uint256 id,
+    //     bool approved,
+    //     uint40 role
+    // ) external returns (Trade[] memory _trades);
 
     /* -------------------------------------------------------------------------- */
     /*                      Public / External Pure Functions.                     */
