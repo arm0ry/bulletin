@@ -45,19 +45,10 @@ interface IBulletin {
     /*                                   Events.                                  */
     /* -------------------------------------------------------------------------- */
 
-    event RequestUpdated(uint256 indexed requestId);
-    event ResourceUpdated(uint256 indexed resourceId);
+    event RequestUpdated(uint256 requestId);
+    event ResourceUpdated(uint256 resourceId);
     event ResponseUpdated(uint256 requestId, uint256 responseId, address from);
     event ExchangeUpdated(uint256 resourceId, uint256 exchangeId, address from);
-    event TradeProcessed(
-        uint256 indexed requestId,
-        uint256 tradeId,
-        bool approved
-    );
-    event RequestSettled(
-        uint256 indexed requestId,
-        uint256 indexed numOfTrades
-    );
 
     /* -------------------------------------------------------------------------- */
     /*                                   Errors.                                  */

@@ -40,20 +40,6 @@ contract Bulletin is OwnableRoles, IBulletin {
     /*                                 Modifiers.                                 */
     /* -------------------------------------------------------------------------- */
 
-    // modifier checkSum(uint16[] calldata p) {
-    //     // Add up all percentages.
-    //     uint256 totalPercentage;
-    //     for (uint256 i; i < p.length; ++i) {
-    //         totalPercentage += p[i];
-    //     }
-
-    //     // Throw when total percentage does not equal to TEN_THOUSAND.
-    //     if (totalPercentage != TEN_THOUSAND)
-    //         revert TotalPercentageMustBeTenThousand();
-
-    //     _;
-    // }
-
     modifier isResourceAvailable(bytes32 source) {
         if (source != 0) {
             (address _b, uint256 _r) = decodeAsset(source);
@@ -213,15 +199,6 @@ contract Bulletin is OwnableRoles, IBulletin {
         emit RequestUpdated(_requestId);
     }
 
-    // function settleRequest(
-    //     uint40 _requestId,
-    //     bool approved,
-    //     uint40 role,
-    //     uint16[] calldata percentages
-    // ) public checkSum(percentages) {
-    //     _settleRequest(_requestId, approved, role, percentages);
-    // }
-
     /// @notice Resource
 
     function withdrawResource(uint256 _resourceId) external {
@@ -332,38 +309,6 @@ contract Bulletin is OwnableRoles, IBulletin {
         emit ResourceUpdated(resourceId);
     }
 
-    // function _settleRequest(
-    //     uint40 _requestId,
-    //     bool approved,
-    //     uint40 role,
-    //     uint16[] calldata percentages
-    // ) internal {
-    //     // Throw when owners mismatch.
-    //     Request memory r = requests[_requestId];
-    //     if (r.owner != msg.sender) revert NotOriginalPoster();
-
-    //     // Tally and retrieve approved trades.
-    //     Trade[] memory _trades = filterTrades(_requestId, approved, role);
-
-    //     // Throw when number of percentages does not match number of approved trades.
-    //     if (_trades.length != percentages.length) revert SettlementMismatch();
-
-    //     for (uint256 i; i < _trades.length; ++i) {
-    //         // Pay resource owner.
-    //         route(
-    //             r.currency,
-    //             address(this),
-    //             _trades[i].from,
-    //             (r.drop * percentages[i]) / TEN_THOUSAND
-    //         );
-    //     }
-
-    //     // Mark `Request` as fulfilled.
-    //     requests[_requestId].fulfilled = true;
-
-    //     emit RequestSettled(_requestId, _trades.length);
-    // }
-
     /* -------------------------------------------------------------------------- */
     /*                                  Helpers.                                  */
     /* -------------------------------------------------------------------------- */
@@ -385,31 +330,6 @@ contract Bulletin is OwnableRoles, IBulletin {
                 : SafeTransferLib.safeTransferFrom(currency, from, to, amount);
         }
     }
-
-    // function filterTrades(
-    //     uint256 id,
-    //     bool approved,
-    //     uint40 role
-    // ) public view returns (Trade[] memory _trades) {
-    //     // Declare for use.
-    //     Trade memory t;
-
-    //     // Retrieve trade id, or number of trades.
-    //     uint256 tId = responseIdsPerRequest[id];
-
-    //     // If trades exist, filter and return trades based on provided `key`.
-    //     if (tId > 0) {
-    //         _trades = new Trade[](tId);
-    //         for (uint256 i = 1; i <= tId; ++i) {
-    //             // Retrieve trade.
-    //             t = responsesPerRequest[id][i];
-
-    //             (approved == t.approved && hasAnyRole(t.from, role))
-    //                 ? _trades[i - 1] = t
-    //                 : t;
-    //         }
-    //     }
-    // }
 
     // Encode bulletin address and ask/resource id as asset.
     function encodeAsset(
