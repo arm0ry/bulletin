@@ -195,10 +195,9 @@ contract BulletinTest is Test {
     //     bulletin.settleRequest(requestId, true, role, percentages);
     // }
 
-    function setupResourceTrade(
+    function setupResourceResponse(
         address user,
         uint256 requestId,
-        uint256 responseId,
         address userBulletin,
         uint256 userResourceId
     ) public payable returns (uint256 id) {
@@ -215,11 +214,11 @@ contract BulletinTest is Test {
             data: BYTES
         });
         vm.prank(user);
-        bulletin.respond(requestId, responseId, trade);
+        bulletin.respond(requestId, 0, trade);
         id = bulletin.responseIdsPerRequest(requestId);
     }
 
-    function setupNonResourceResponse(
+    function setupSimpleResponse(
         address user,
         uint256 requestId
     ) public payable returns (uint256 id) {
@@ -238,7 +237,7 @@ contract BulletinTest is Test {
         id = bulletin.responseIdsPerRequest(requestId);
     }
 
-    function updateNonResourceResponse(
+    function updateSimpleResponse(
         address user,
         uint256 requestId,
         uint256 responseId
@@ -257,15 +256,19 @@ contract BulletinTest is Test {
         bulletin.respond(requestId, responseId, trade);
     }
 
-    function setupExchange(
+    function setupResourceExchange(
         address user,
-        uint256 resourceId
+        uint256 resourceId,
+        address userBulletin,
+        uint256 userResourceId
     ) public payable returns (uint256 id) {
-        bytes32 r;
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
             from: user,
-            resource: r,
+            resource: bulletin.encodeAsset(
+                address(userBulletin),
+                uint96(userResourceId)
+            ),
             currency: address(0),
             amount: 0,
             content: TEST,
@@ -276,7 +279,28 @@ contract BulletinTest is Test {
         id = bulletin.exchangeIdsPerResource(resourceId);
     }
 
-    function updateExchange(
+    function setupCurrencyExchange(
+        address user,
+        uint256 resourceId,
+        address currency,
+        uint256 amount
+    ) public payable returns (uint256 id) {
+        bytes32 r;
+        IBulletin.Trade memory trade = IBulletin.Trade({
+            approved: true,
+            from: user,
+            resource: r,
+            currency: currency,
+            amount: amount,
+            content: TEST,
+            data: BYTES
+        });
+        vm.prank(user);
+        bulletin.exchange(resourceId, 0, trade);
+        id = bulletin.exchangeIdsPerResource(resourceId);
+    }
+
+    function updateCurrencyExchange(
         address user,
         uint256 resourceId,
         uint256 exchangeId
@@ -571,16 +595,19 @@ contract BulletinTest is Test {
     // todo: asserts
     function test_withdraw_InvalidWithdrawal() public payable {}
 
-    function test_resource() public payable {
+    function test_Resource() public payable {
         uint256 resourceId = resource(true, owner);
         IBulletin.Resource memory _resource = bulletin.getResource(resourceId);
+
+        uint256 role = Bulletin(bulletin).rolesOf(owner);
+        emit log_uint(role);
 
         assertEq(_resource.from, owner);
         assertEq(_resource.title, TEST);
         assertEq(_resource.detail, TEST);
     }
 
-    function test_withdrawResource() public payable {
+    function test_Resource_Withdraw() public payable {
         uint256 resourceId = resource(true, owner);
         withdrawResource(owner, resourceId);
         IBulletin.Resource memory _resource = bulletin.getResource(resourceId);
@@ -590,7 +617,7 @@ contract BulletinTest is Test {
         assertEq(_resource.detail, "");
     }
 
-    function test_resourceByUser() public payable {
+    function test_ResourceByUser() public payable {
         grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
         uint256 resourceId = resource(false, alice);
 
@@ -600,6 +627,105 @@ contract BulletinTest is Test {
         assertEq(_resource.from, address(0));
         assertEq(_resource.title, "");
         assertEq(_resource.detail, "");
+    }
+
+    function test_ExchangeForResource_ApproveCurrency(
+        uint256 amount
+    ) public payable {
+        grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
+        uint256 resourceId = resource(false, alice);
+
+        mock.mint(bob, amount);
+        mockApprove(bob, address(bulletin), amount);
+        uint256 exchangeId = setupCurrencyExchange(
+            bob,
+            resourceId,
+            address(mock),
+            amount
+        );
+
+        IBulletin.Trade memory trade = bulletin.getExchange(
+            resourceId,
+            exchangeId
+        );
+        assertEq(trade.approved, false);
+        assertEq(trade.from, bob);
+        assertEq(trade.currency, address(mock));
+        assertEq(trade.amount, amount);
+        assertEq(trade.resource, 0);
+        assertEq(trade.content, TEST);
+        assertEq(trade.data, BYTES);
+        assertEq(mock.balanceOf(bob), 0);
+        assertEq(mock.balanceOf(address(bulletin)), amount);
+
+        (uint256 id, IBulletin.Trade memory _trade) = bulletin
+            .getExchangeByUser(resourceId, bob);
+        assertEq(id, exchangeId);
+        assertEq(_trade.approved, false);
+        assertEq(_trade.from, bob);
+        assertEq(_trade.currency, address(mock));
+        assertEq(_trade.amount, amount);
+        assertEq(_trade.resource, 0);
+        assertEq(_trade.content, TEST);
+        assertEq(_trade.data, BYTES);
+
+        approveExchange(alice, resourceId, exchangeId);
+        trade = bulletin.getExchange(resourceId, exchangeId);
+        assertEq(trade.approved, true);
+        assertEq(trade.from, bob);
+        assertEq(trade.currency, address(mock));
+        assertEq(trade.amount, amount);
+        assertEq(mock.balanceOf(alice), amount);
+        assertEq(mock.balanceOf(address(bulletin)), 0);
+    }
+
+    function test_ExchangeForResource_ApproveResource() public payable {
+        grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
+        uint256 resourceId = resource(false, alice);
+
+        uint256 bobResourceId = resource(false, bob);
+        uint256 exchangeId = setupResourceExchange(
+            bob,
+            resourceId,
+            address(bulletin),
+            bobResourceId
+        );
+
+        IBulletin.Trade memory trade = bulletin.getExchange(
+            resourceId,
+            exchangeId
+        );
+        assertEq(trade.approved, false);
+        assertEq(trade.from, bob);
+        assertEq(trade.currency, address(0));
+        assertEq(trade.amount, 0);
+        assertEq(
+            trade.resource,
+            bulletin.encodeAsset(address(bulletin), uint96(bobResourceId))
+        );
+        assertEq(trade.content, TEST);
+        assertEq(trade.data, BYTES);
+
+        (uint256 id, IBulletin.Trade memory _trade) = bulletin
+            .getExchangeByUser(resourceId, bob);
+        assertEq(id, exchangeId);
+        assertEq(_trade.approved, false);
+        assertEq(_trade.from, bob);
+        assertEq(_trade.currency, address(0));
+        assertEq(_trade.amount, 0);
+        assertEq(
+            _trade.resource,
+            bulletin.encodeAsset(address(bulletin), uint96(bobResourceId))
+        );
+        assertEq(_trade.content, TEST);
+        assertEq(_trade.data, BYTES);
+
+        approveExchange(alice, resourceId, exchangeId);
+        trade = bulletin.getExchange(resourceId, exchangeId);
+        assertEq(trade.approved, true);
+        assertEq(trade.from, bob);
+        assertEq(trade.currency, address(0));
+        assertEq(trade.amount, 0);
     }
 
     function test_ResourceResponseToRequest_Approved(
@@ -619,10 +745,9 @@ contract BulletinTest is Test {
         uint256 resourceId = resource(false, alice);
 
         // setup trade
-        uint256 tradeId = setupResourceTrade(
+        uint256 tradeId = setupResourceResponse(
             alice,
             requestId,
-            0,
             address(bulletin),
             resourceId
         );
@@ -636,7 +761,7 @@ contract BulletinTest is Test {
         assertEq(trade.approved, !approved);
     }
 
-    function test_updateNonResourceResponse_NotOriginalPoster(
+    function test_updateSimpleResponse_NotOriginalPoster(
         uint256 _requestId,
         uint256 _tradeId
     ) public payable {
@@ -645,7 +770,7 @@ contract BulletinTest is Test {
         bulletin.approveResponse(_requestId, _tradeId, 0);
     }
 
-    function test_NonResourceResponseToRequest_OneResponseWithCurrency(
+    function test_SimpleResponseToRequest_OneApprovalWithCurrency(
         uint256 amount
     ) public payable {
         vm.assume(1e20 > amount);
@@ -659,7 +784,7 @@ contract BulletinTest is Test {
         grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
 
         // setup first trade
-        uint256 responseId = setupNonResourceResponse(alice, requestId);
+        uint256 responseId = setupSimpleResponse(alice, requestId);
 
         // approve first trade
         approveResponse(owner, requestId, responseId, amount);
@@ -668,7 +793,7 @@ contract BulletinTest is Test {
         assertEq(MockERC20(mock).balanceOf(alice), amount);
     }
 
-    function test_NonResourceResponseToRequest_TwoResponseWithCurrency(
+    function test_SimpleResponseToRequest_TwoApprovalWithCurrency(
         uint256 amount
     ) public payable {
         vm.assume(1e20 > amount);
@@ -686,13 +811,13 @@ contract BulletinTest is Test {
         grantRole(address(bulletin), owner, address(bulletin), BULLETIN_ROLE);
 
         // setup first trade
-        uint256 tradeId = setupNonResourceResponse(alice, requestId);
+        uint256 tradeId = setupSimpleResponse(alice, requestId);
 
         // approve first trade
         approveResponse(owner, requestId, tradeId, (amount * 20) / 100);
 
         // setup second trade
-        tradeId = setupNonResourceResponse(bob, requestId);
+        tradeId = setupSimpleResponse(bob, requestId);
 
         // approve second trade
         approveResponse(owner, requestId, tradeId, (amount * 20) / 100);
@@ -720,16 +845,15 @@ contract BulletinTest is Test {
     //     uint256 resourceId = resource(false, alice);
 
     //     // setup first trade
-    //     uint256 tradeId = setupResourceTrade(
+    //     uint256 tradeId = setupResourceResponse(
     //         alice,
     //         requestId,
-    //         0,
     //         address(bulletin),
     //         resourceId
     //     );
 
     //     // approve first trade
-    //     updateNonResourceResponse(owner, requestId, tradeId);
+    //     updateSimpleResponse(owner, requestId, tradeId);
 
     //     // settle ask
     //     uint16[] memory perc = new uint16[](1);
@@ -767,31 +891,29 @@ contract BulletinTest is Test {
     //     uint256 resourceId = resource(false, alice);
 
     //     // setup first trade
-    //     uint256 tradeId = setupResourceTrade(
+    //     uint256 tradeId = setupResourceResponse(
     //         alice,
     //         requestId,
-    //         0,
     //         address(bulletin),
     //         resourceId
     //     );
 
     //     // approve first trade
-    //     updateNonResourceResponse(owner, requestId, tradeId);
+    //     updateSimpleResponse(owner, requestId, tradeId);
 
     //     // setup second resource
     //     uint256 resourceId2 = resource(false, bob);
 
     //     // setup second trade
-    //     tradeId = setupResourceTrade(
+    //     tradeId = setupResourceResponse(
     //         bob,
     //         requestId,
-    //         0,
     //         address(bulletin),
     //         resourceId2
     //     );
 
     //     // approve second trade
-    //     updateNonResourceResponse(owner, requestId, tradeId);
+    //     updateSimpleResponse(owner, requestId, tradeId);
 
     //     // settle ask
     //     uint16[] memory perc = new uint16[](2);
@@ -839,46 +961,43 @@ contract BulletinTest is Test {
     //     uint256 resourceId = resource(false, alice);
 
     //     // setup first trade
-    //     uint256 tradeId = setupResourceTrade(
+    //     uint256 tradeId = setupResourceResponse(
     //         alice,
     //         requestId,
-    //         0,
     //         address(bulletin),
     //         resourceId
     //     );
 
     //     // approve first trade
-    //     updateNonResourceResponse(owner, requestId, tradeId);
+    //     updateSimpleResponse(owner, requestId, tradeId);
 
     //     // setup second resource
     //     uint256 resourceId2 = resource(false, bob);
 
     //     // setup second trade
-    //     tradeId = setupResourceTrade(
+    //     tradeId = setupResourceResponse(
     //         bob,
     //         requestId,
-    //         0,
     //         address(bulletin),
     //         resourceId2
     //     );
 
     //     // approve second trade
-    //     updateNonResourceResponse(owner, requestId, tradeId);
+    //     updateSimpleResponse(owner, requestId, tradeId);
 
     //     // setup third resource
     //     uint256 resourceId3 = resource(false, charlie);
 
     //     // setup third trade
-    //     tradeId = setupResourceTrade(
+    //     tradeId = setupResourceResponse(
     //         charlie,
     //         requestId,
-    //         0,
     //         address(bulletin),
     //         resourceId3
     //     );
 
     //     // approve third trade
-    //     updateNonResourceResponse(owner, requestId, tradeId);
+    //     updateSimpleResponse(owner, requestId, tradeId);
 
     //     // settle ask
     //     uint16[] memory perc = new uint16[](3);
