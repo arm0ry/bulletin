@@ -13,9 +13,6 @@ contract Bulletin is OwnableRoles, IBulletin {
     /*                                 Constants.                                 */
     /* -------------------------------------------------------------------------- */
 
-    /// The denominator for calculating distribution.
-    uint16 public constant TEN_THOUSAND = 10_000;
-
     /// The permissioned role reserved for autonomous agents.
     uint40 internal constant AGENT_ROLE = 1 << 1;
 
@@ -378,26 +375,26 @@ contract Bulletin is OwnableRoles, IBulletin {
     function getResponseByUser(
         uint256 _requestId,
         address user
-    ) public view returns (uint256 tradeId, Trade memory t) {
+    ) public view returns (uint256 responseId, Trade memory t) {
         uint256 length = responseIdsPerRequest[_requestId];
         for (uint256 i = 1; i <= length; ++i) {
-            (responsesPerRequest[_requestId][i].from == user)
-                ? t = responsesPerRequest[_requestId][i]
-                : t;
-            tradeId = i;
+            if (responsesPerRequest[_requestId][i].from == user) {
+                t = responsesPerRequest[_requestId][i];
+                responseId = i;
+            }
         }
     }
 
     function getExchangeByUser(
         uint256 _resourceId,
         address user
-    ) public view returns (uint256 tradeId, Trade memory t) {
+    ) public view returns (uint256 exchangeId, Trade memory t) {
         uint256 length = exchangeIdsPerResource[_resourceId];
         for (uint256 i = 1; i <= length; ++i) {
-            (exchangesPerResource[_resourceId][i].from == user)
-                ? t = exchangesPerResource[_resourceId][i]
-                : t;
-            tradeId = i;
+            if (exchangesPerResource[_resourceId][i].from == user) {
+                t = exchangesPerResource[_resourceId][i];
+                exchangeId = i;
+            }
         }
     }
 

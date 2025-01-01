@@ -249,8 +249,8 @@ contract BulletinTest is Test {
             resource: r,
             currency: address(0),
             amount: 0,
-            content: TEST,
-            data: BYTES
+            content: TEST2,
+            data: BYTES2
         });
         vm.prank(user);
         bulletin.respond(requestId, responseId, trade);
@@ -279,6 +279,30 @@ contract BulletinTest is Test {
         id = bulletin.exchangeIdsPerResource(resourceId);
     }
 
+    function updateResourceExchange(
+        address user,
+        uint256 resourceId,
+        uint256 exchangeId,
+        address userBulletin,
+        uint256 userResourceId
+    ) public payable returns (uint256 id) {
+        IBulletin.Trade memory trade = IBulletin.Trade({
+            approved: true,
+            from: user,
+            resource: bulletin.encodeAsset(
+                address(userBulletin),
+                uint96(userResourceId)
+            ),
+            currency: address(0),
+            amount: 0,
+            content: TEST2,
+            data: BYTES2
+        });
+        vm.prank(user);
+        bulletin.exchange(resourceId, exchangeId, trade);
+        id = bulletin.exchangeIdsPerResource(resourceId);
+    }
+
     function setupCurrencyExchange(
         address user,
         uint256 resourceId,
@@ -303,17 +327,19 @@ contract BulletinTest is Test {
     function updateCurrencyExchange(
         address user,
         uint256 resourceId,
-        uint256 exchangeId
+        uint256 exchangeId,
+        address currency,
+        uint256 amount
     ) public payable {
         bytes32 r;
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
             from: user,
             resource: r,
-            currency: address(0),
-            amount: 0,
-            content: TEST,
-            data: BYTES
+            currency: currency,
+            amount: amount,
+            content: TEST2,
+            data: BYTES2
         });
         vm.prank(user);
         bulletin.exchange(resourceId, exchangeId, trade);
@@ -728,6 +754,47 @@ contract BulletinTest is Test {
         assertEq(trade.amount, 0);
     }
 
+    function test_ExchangeForResource_Withdraw(uint256 amount) public payable {
+        grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
+        uint256 resourceId = resource(false, alice);
+
+        mock.mint(bob, amount);
+        mockApprove(bob, address(bulletin), amount);
+        uint256 exchangeId = setupCurrencyExchange(
+            bob,
+            resourceId,
+            address(mock),
+            amount
+        );
+
+        IBulletin.Trade memory trade = bulletin.getExchange(
+            resourceId,
+            exchangeId
+        );
+        assertEq(trade.approved, false);
+        assertEq(trade.from, bob);
+        assertEq(trade.currency, address(mock));
+        assertEq(trade.amount, amount);
+        assertEq(trade.resource, 0);
+        assertEq(trade.content, TEST);
+        assertEq(trade.data, BYTES);
+        assertEq(mock.balanceOf(bob), 0);
+        assertEq(mock.balanceOf(address(bulletin)), amount);
+
+        withdrawExchange(bob, resourceId, exchangeId);
+
+        (uint256 id, ) = bulletin.getExchangeByUser(resourceId, bob);
+        assertEq(id, 0);
+
+        trade = bulletin.getExchange(resourceId, exchangeId);
+        assertEq(trade.approved, false);
+        assertEq(trade.from, address(0));
+        assertEq(trade.currency, address(0));
+        assertEq(trade.amount, 0);
+        assertEq(mock.balanceOf(bob), amount);
+        assertEq(mock.balanceOf(address(bulletin)), 0);
+    }
+
     function test_ResourceResponseToRequest_Approved(
         uint256 max,
         uint256 amount
@@ -761,6 +828,48 @@ contract BulletinTest is Test {
         assertEq(trade.approved, !approved);
     }
 
+    function test_ResourceResponseToRequest_Withdraw(
+        uint256 max,
+        uint256 amount
+    ) public payable {
+        mock.mint(owner, max);
+        vm.assume(max > amount);
+
+        // setup request
+        uint256 requestId = requestAndDepositCurrency(true, owner, amount);
+
+        // grant PERMISSIONED role
+        grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
+
+        // setup resource
+        uint256 resourceId = resource(false, alice);
+
+        // setup trade
+        uint256 responseId = setupResourceResponse(
+            alice,
+            requestId,
+            address(bulletin),
+            resourceId
+        );
+
+        withdrawResponse(alice, requestId, responseId);
+
+        (uint256 id, ) = bulletin.getResponseByUser(requestId, alice);
+        assertEq(id, 0);
+
+        IBulletin.Trade memory trade = bulletin.getResponse(
+            requestId,
+            responseId
+        );
+        assertEq(trade.approved, false);
+        assertEq(trade.from, address(0));
+        assertEq(trade.currency, address(0));
+        assertEq(trade.amount, 0);
+        assertEq(trade.resource, 0);
+        assertEq(trade.content, "");
+        assertEq(trade.data, bytes(string("")));
+    }
+
     function test_updateSimpleResponse_NotOriginalPoster(
         uint256 _requestId,
         uint256 _tradeId
@@ -791,6 +900,17 @@ contract BulletinTest is Test {
 
         assertEq(MockERC20(mock).balanceOf(address(bulletin)), 0);
         assertEq(MockERC20(mock).balanceOf(alice), amount);
+
+        (uint256 id, IBulletin.Trade memory _trade) = bulletin
+            .getResponseByUser(requestId, alice);
+        assertEq(id, responseId);
+        assertEq(_trade.approved, true);
+        assertEq(_trade.from, alice);
+        assertEq(_trade.currency, address(0));
+        assertEq(_trade.amount, 0);
+        assertEq(_trade.resource, 0);
+        assertEq(_trade.content, TEST);
+        assertEq(_trade.data, BYTES);
     }
 
     function test_SimpleResponseToRequest_TwoApprovalWithCurrency(
@@ -811,16 +931,27 @@ contract BulletinTest is Test {
         grantRole(address(bulletin), owner, address(bulletin), BULLETIN_ROLE);
 
         // setup first trade
-        uint256 tradeId = setupSimpleResponse(alice, requestId);
+        uint256 responseId = setupSimpleResponse(alice, requestId);
 
         // approve first trade
-        approveResponse(owner, requestId, tradeId, (amount * 20) / 100);
+        approveResponse(owner, requestId, responseId, (amount * 20) / 100);
+
+        (uint256 id, IBulletin.Trade memory _trade) = bulletin
+            .getResponseByUser(requestId, alice);
+        assertEq(id, responseId);
+        assertEq(_trade.approved, true);
+        assertEq(_trade.from, alice);
+        assertEq(_trade.currency, address(0));
+        assertEq(_trade.amount, 0);
+        assertEq(_trade.resource, 0);
+        assertEq(_trade.content, TEST);
+        assertEq(_trade.data, BYTES);
 
         // setup second trade
-        tradeId = setupSimpleResponse(bob, requestId);
+        responseId = setupSimpleResponse(bob, requestId);
 
         // approve second trade
-        approveResponse(owner, requestId, tradeId, (amount * 20) / 100);
+        approveResponse(owner, requestId, responseId, (amount * 20) / 100);
 
         assertEq(
             MockERC20(mock).balanceOf(address(bulletin)),
@@ -828,6 +959,16 @@ contract BulletinTest is Test {
         );
         assertEq(MockERC20(mock).balanceOf(alice), (amount * 20) / 100);
         assertEq(MockERC20(mock).balanceOf(bob), (amount * 20) / 100);
+
+        (id, _trade) = bulletin.getResponseByUser(requestId, bob);
+        assertEq(id, responseId);
+        assertEq(_trade.approved, true);
+        assertEq(_trade.from, bob);
+        assertEq(_trade.currency, address(0));
+        assertEq(_trade.amount, 0);
+        assertEq(_trade.resource, 0);
+        assertEq(_trade.content, TEST);
+        assertEq(_trade.data, BYTES);
     }
 
     // function test_settleRequest_OneTrade(uint256 amount) public payable {
