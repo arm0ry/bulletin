@@ -63,17 +63,9 @@ interface IBulletin {
     /* -------------------------------------------------------------------------- */
 
     function request(Request calldata r) external payable;
-    function respond(
-        uint256 requestId,
-        uint256 respondId,
-        Trade calldata t
-    ) external payable;
+    function respond(uint256 requestId, Trade calldata t) external payable;
     function resource(Resource calldata r) external;
-    function exchange(
-        uint256 resourceId,
-        uint256 exchangeId,
-        Trade calldata t
-    ) external payable;
+    function exchange(uint256 resourceId, Trade calldata t) external payable;
 
     function withdrawRequest(uint256 requestId) external;
     function withdrawResource(uint256 resourceId) external;

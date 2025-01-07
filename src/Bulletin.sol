@@ -92,7 +92,6 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     function respond(
         uint256 _requestId,
-        uint256 responseId,
         Trade calldata t
     )
         external
@@ -100,17 +99,19 @@ contract Bulletin is OwnableRoles, IBulletin {
         isResourceAvailable(t.resource)
         deposit(t.from, address(this), t.currency, t.amount)
     {
-        if (responseId > 0) {
-            Trade memory _t = responsesPerRequest[_requestId][responseId];
+        (uint256 responseId, Trade memory _t) = getResponseByUser(
+            _requestId,
+            msg.sender
+        );
+        if (responseId == 0) {
+            unchecked {
+                responseId = ++responseIdsPerRequest[_requestId];
+            }
+        } else {
             if (_t.from != msg.sender) revert Unauthorized();
             if (_t.approved) revert Approved();
             if (_t.amount != 0)
                 route(_t.currency, address(this), _t.from, _t.amount);
-        } else {
-            // Create new `responseId`.
-            unchecked {
-                responseId = ++responseIdsPerRequest[_requestId];
-            }
         }
 
         // Store trade.
@@ -124,7 +125,7 @@ contract Bulletin is OwnableRoles, IBulletin {
             data: t.data
         });
 
-        emit ResponseUpdated(_requestId, responseId, t.from);
+        emit ResponseUpdated(_requestId, responseId, msg.sender);
     }
 
     function resource(Resource calldata r) external {
@@ -146,7 +147,6 @@ contract Bulletin is OwnableRoles, IBulletin {
     /// proposed `Trade`
     function exchange(
         uint256 _resourceId,
-        uint256 exchangeId,
         Trade calldata t
     )
         external
@@ -154,17 +154,20 @@ contract Bulletin is OwnableRoles, IBulletin {
         isResourceAvailable(t.resource)
         deposit(t.from, address(this), t.currency, t.amount)
     {
-        if (exchangeId > 0) {
-            Trade memory _t = exchangesPerResource[_resourceId][exchangeId];
+        (uint256 exchangeId, Trade memory _t) = getExchangeByUser(
+            _resourceId,
+            msg.sender
+        );
+
+        if (exchangeId == 0) {
+            unchecked {
+                exchangeId = ++exchangeIdsPerResource[_resourceId];
+            }
+        } else {
             if (_t.from != msg.sender) revert Unauthorized();
             if (_t.approved) revert Approved();
             if (_t.amount != 0)
                 route(_t.currency, address(this), _t.from, _t.amount);
-        } else {
-            // Create new `exchangeId`.
-            unchecked {
-                exchangeId = ++exchangeIdsPerResource[_resourceId];
-            }
         }
 
         // Store trade.
@@ -178,7 +181,7 @@ contract Bulletin is OwnableRoles, IBulletin {
             data: t.data
         });
 
-        emit ExchangeUpdated(_resourceId, exchangeId, t.from);
+        emit ExchangeUpdated(_resourceId, exchangeId, msg.sender);
     }
 
     /* -------------------------------------------------------------------------- */

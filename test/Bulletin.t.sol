@@ -214,7 +214,7 @@ contract BulletinTest is Test {
             data: BYTES
         });
         vm.prank(user);
-        bulletin.respond(requestId, 0, trade);
+        bulletin.respond(requestId, trade);
         id = bulletin.responseIdsPerRequest(requestId);
     }
 
@@ -233,7 +233,7 @@ contract BulletinTest is Test {
             data: BYTES
         });
         vm.prank(user);
-        bulletin.respond(requestId, 0, trade);
+        bulletin.respond(requestId, trade);
         id = bulletin.responseIdsPerRequest(requestId);
     }
 
@@ -253,7 +253,7 @@ contract BulletinTest is Test {
             data: BYTES2
         });
         vm.prank(user);
-        bulletin.respond(requestId, responseId, trade);
+        bulletin.respond(requestId, trade);
     }
 
     function setupResourceExchange(
@@ -275,7 +275,7 @@ contract BulletinTest is Test {
             data: BYTES
         });
         vm.prank(user);
-        bulletin.exchange(resourceId, 0, trade);
+        bulletin.exchange(resourceId, trade);
         id = bulletin.exchangeIdsPerResource(resourceId);
     }
 
@@ -299,7 +299,7 @@ contract BulletinTest is Test {
             data: BYTES2
         });
         vm.prank(user);
-        bulletin.exchange(resourceId, exchangeId, trade);
+        bulletin.exchange(resourceId, trade);
         id = bulletin.exchangeIdsPerResource(resourceId);
     }
 
@@ -320,7 +320,7 @@ contract BulletinTest is Test {
             data: BYTES
         });
         vm.prank(user);
-        bulletin.exchange(resourceId, 0, trade);
+        bulletin.exchange(resourceId, trade);
         id = bulletin.exchangeIdsPerResource(resourceId);
     }
 
@@ -342,7 +342,7 @@ contract BulletinTest is Test {
             data: BYTES2
         });
         vm.prank(user);
-        bulletin.exchange(resourceId, exchangeId, trade);
+        bulletin.exchange(resourceId, trade);
     }
 
     /// @notice Trades
