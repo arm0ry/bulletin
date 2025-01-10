@@ -53,6 +53,7 @@ contract Bulletin is OwnableRoles, IBulletin {
         address currency,
         uint256 amount
     ) {
+        if (from != msg.sender) revert Unauthorized();
         if (amount != 0) route(currency, from, to, amount);
         _;
     }
@@ -72,8 +73,6 @@ contract Bulletin is OwnableRoles, IBulletin {
     function request(
         Request calldata r
     ) external payable deposit(r.from, address(this), r.currency, r.drop) {
-        if (r.from != msg.sender) revert Unauthorized();
-
         unchecked {
             _setRequest(++requestId, r);
         }
@@ -97,7 +96,7 @@ contract Bulletin is OwnableRoles, IBulletin {
         external
         payable
         isResourceAvailable(t.resource)
-        deposit(t.from, address(this), t.currency, t.amount)
+        deposit(msg.sender, address(this), t.currency, t.amount)
     {
         (uint256 responseId, Trade memory _t) = getResponseByUser(
             _requestId,
@@ -108,7 +107,6 @@ contract Bulletin is OwnableRoles, IBulletin {
                 responseId = ++responseIdsPerRequest[_requestId];
             }
         } else {
-            if (_t.from != msg.sender) revert Unauthorized();
             if (_t.approved) revert Approved();
             if (_t.amount != 0)
                 route(_t.currency, address(this), _t.from, _t.amount);
@@ -152,7 +150,7 @@ contract Bulletin is OwnableRoles, IBulletin {
         external
         payable
         isResourceAvailable(t.resource)
-        deposit(t.from, address(this), t.currency, t.amount)
+        deposit(msg.sender, address(this), t.currency, t.amount)
     {
         (uint256 exchangeId, Trade memory _t) = getExchangeByUser(
             _resourceId,
@@ -164,7 +162,6 @@ contract Bulletin is OwnableRoles, IBulletin {
                 exchangeId = ++exchangeIdsPerResource[_resourceId];
             }
         } else {
-            if (_t.from != msg.sender) revert Unauthorized();
             if (_t.approved) revert Approved();
             if (_t.amount != 0)
                 route(_t.currency, address(this), _t.from, _t.amount);
@@ -223,7 +220,6 @@ contract Bulletin is OwnableRoles, IBulletin {
             // Aprove trade.
             responsesPerRequest[_requestId][responseId].approved = true;
 
-            // todo: check if request has enough currency to drop `amount`
             if (amount > 0) {
                 if (amount > r.drop) revert InsufficientAmount();
                 requests[_requestId].drop = r.drop - amount;
@@ -250,7 +246,7 @@ contract Bulletin is OwnableRoles, IBulletin {
 
         route(t.currency, address(this), t.from, t.amount);
         delete responsesPerRequest[_requestId][_responseId];
-        emit RequestUpdated(_requestId);
+        emit ResponseUpdated(_requestId, _responseId, t.from);
     }
 
     function approveExchange(uint256 _resourceId, uint256 exchangeId) external {
@@ -280,7 +276,7 @@ contract Bulletin is OwnableRoles, IBulletin {
 
         route(t.currency, address(this), t.from, t.amount);
         delete exchangesPerResource[_resourceId][_exchangeId];
-        emit RequestUpdated(_resourceId);
+        emit ExchangeUpdated(_resourceId, _exchangeId, t.from);
     }
 
     /* -------------------------------------------------------------------------- */

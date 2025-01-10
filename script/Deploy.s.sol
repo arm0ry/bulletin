@@ -7,7 +7,7 @@ import {console2} from "lib/forge-std/src/console2.sol";
 import {BulletinFactory} from "src/BulletinFactory.sol";
 import {Bulletin} from "src/Bulletin.sol";
 import {IBulletin} from "src/interface/IBulletin.sol";
-// import {Currency} from "src/tokens/Currency.sol";
+import {Currency} from "src/Currency.sol";
 
 /// @notice A very simple deployment script
 contract Deploy is Script {
@@ -19,14 +19,15 @@ contract Deploy is Script {
     // Constant.
     bytes32 constant TEST_BYTES32 = "TEST";
     string constant TEST_STRING = "TEST";
+    bytes constant TEST_BYTES = "TEST";
 
     // Contracts.
     address payable bulletinAddr =
-        payable(address(0x35639C9C7f60CcA759cBD6A7a859818Ffa5D12f7));
+        payable(address(0x51552eEE4ddB068165a07dC0D002336a817175F9));
     address factoryAddr = address(0);
 
     // Tokens.
-    address currencyAddr = address(0);
+    address currencyAddr = address(0xae1669d63dFcb827dd5A4ea9B7A000eFCe84C90a);
     address currencyAddr2 = address(0);
 
     // Users.
@@ -37,8 +38,7 @@ contract Deploy is Script {
     address gasbot = address(0x7Cf60ec5A5541b7d4073F795a67A75E383F3FFFf);
 
     // Bulletin Roles.
-    uint40 PERMISSIONED = 1 << 1;
-    uint40 MEMBER_ROLE = 1 << 2;
+    uint40 PERMISSIONED = 1 << 2;
 
     /// @notice The main script entrypoint.
     function run() external {
@@ -49,8 +49,23 @@ contract Deploy is Script {
 
         vm.startBroadcast(privateKey);
 
+        // Bulletin(bulletinAddr).exchange(
+        //     1,
+        //     IBulletin.Trade({
+        //         approved: false,
+        //         from: account,
+        //         resource: 0,
+        //         currency: currencyAddr,
+        //         amount: 2 ether,
+        //         content: TEST_STRING,
+        //         data: TEST_BYTES
+        //     })
+        // );
+
+        // deployCurrency(account);
+
         // Grant permissions
-        // Bulletin(bulletinAddr).grantRoles(user2, PERMISSIONED);
+        // Bulletin(bulletinAddr).grantRoles(user1, PERMISSIONED);
 
         // Approve trades
         // Bulletin(bulletinAddr).approveTrade(1, 1);
@@ -58,32 +73,69 @@ contract Deploy is Script {
         // factoryAddr = deployBulletinFactory();
         // deployBulletin(factoryAddr, user1);
 
-        // todo: limited to visitors
-        IBulletin.Request memory req = IBulletin.Request({
-            from: address(0x4744cda32bE7b3e75b9334001da9ED21789d4c0d),
-            title: unicode"65大松報到",
-            detail: "",
-            currency: address(0),
-            drop: 0 ether
-        });
-        Bulletin(bulletinAddr).requestByAgent(req);
+        // Currency(currencyAddr).mint(
+        //     0xc9e677d8a064808717C2F38b5d6Fe9eE69C1fa6a,
+        //     40 ether
+        // );
 
-        // todo: limited to project owners
-        req = IBulletin.Request({
-            from: address(0x4744cda32bE7b3e75b9334001da9ED21789d4c0d),
-            title: unicode"回饋65大松",
-            detail: "Prerequisite: valid Ethereum wallet address",
-            currency: address(0),
-            drop: 0 ether
-        });
-        Bulletin(bulletinAddr).requestByAgent(req);
+        // uint256 balance = Currency(currencyAddr).balanceOf(account);
+        // emit IBulletin.RequestUpdated(balance);
 
-        IBulletin.Resource memory res = IBulletin.Resource({
-            from: address(0x4744cda32bE7b3e75b9334001da9ED21789d4c0d),
-            title: unicode"65大松之坑主報告：鏈上大松 💗",
-            detail: ""
-        });
-        Bulletin(bulletinAddr).resourceByAgent(res);
+        // Currency(currencyAddr).approve(bulletinAddr, 40 ether);
+
+        // uint256 allow = Currency(currencyAddr).allowance(
+        //     0xc9e677d8a064808717C2F38b5d6Fe9eE69C1fa6a,
+        //     0xdbe8B7a2C394dBcE1895EBA5c622D5A646eA22c4
+        // );
+
+        // Currency(currencyAddr).approve(
+        //     0x1C17c048111809503d8d44F760aAA0bFAEf2edf3,
+        //     40 ether
+        // );
+
+        // allow = Currency(currencyAddr).allowance(
+        //     0xc9e677d8a064808717C2F38b5d6Fe9eE69C1fa6a,
+        //     0x1C17c048111809503d8d44F760aAA0bFAEf2edf3
+        // );
+
+        // emit IBulletin.RequestUpdated(allow);
+
+        // IBulletin.Request memory req = IBulletin.Request({
+        //     from: account,
+        //     title: unicode"大松報到 | Check-in",
+        //     detail: unicode"報到成功可獲取 2 $ARM0RY | Recieve 2 $ARM0RY for checking in",
+        //     currency: currencyAddr,
+        //     drop: 20 ether
+        // });
+        // Bulletin(bulletinAddr).request(req);
+
+        // req = IBulletin.Request({
+        //     from: account,
+        //     title: unicode"維護環境小小松 | BYO-Utensils",
+        //     detail: unicode"回覆成功可獲取 2 $ARM0RY | Recieve 2 $ARM0RY for responding",
+        //     currency: currencyAddr,
+        //     drop: 20 ether
+        // });
+        // Bulletin(bulletinAddr).requestByAgent(req);
+
+        // IBulletin.Resource memory res = IBulletin.Resource({
+        //     from: user1,
+        //     title: unicode"閒聊區塊鏈應用 | Chat about web3",
+        //     detail: ""
+        // });
+        // Bulletin(bulletinAddr).resourceByAgent(res);
+
+        // res = IBulletin.Resource({
+        //     from: user1,
+        //     title: unicode"協助開啟以太坊錢包 | Get an Ethereum wallet address",
+        //     detail: ""
+        // });
+        // Bulletin(bulletinAddr).resourceByAgent(res);
+
+        Bulletin(bulletinAddr).approveResponse(1, 1, 2 ether);
+        Bulletin(bulletinAddr).approveResponse(1, 2, 2 ether);
+        Bulletin(bulletinAddr).approveResponse(2, 1, 2 ether);
+        Bulletin(bulletinAddr).approveResponse(2, 3, 2 ether);
 
         vm.stopBroadcast();
     }
@@ -111,14 +163,9 @@ contract Deploy is Script {
         }
     }
 
-    // function deployCurrency(
-    //     string memory name,
-    //     string memory symbol,
-    //     address owner
-    // ) internal {
-    //     delete currencyAddr;
-    //     currencyAddr = address(new Currency(name, symbol, owner));
-    // }
+    function deployCurrency(address owner) internal {
+        currencyAddr = address(new Currency(owner));
+    }
 
     // function deployCurrency2(
     //     string memory name,
