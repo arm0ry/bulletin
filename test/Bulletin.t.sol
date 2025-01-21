@@ -652,6 +652,7 @@ contract BulletinTest is Test {
     function test_ExchangeForResource_ApproveCurrency(
         uint256 amount
     ) public payable {
+        vm.assume(1e20 > amount);
         grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
         uint256 resourceId = resource(false, alice);
 

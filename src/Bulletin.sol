@@ -25,7 +25,7 @@ contract Bulletin is OwnableRoles, IBulletin {
     uint40 public resourceId;
 
     // Mappings by user.
-    mapping(address => IBulletin.Credit) public credits;
+    mapping(address => Credit) public credits;
 
     // Mappings by `requestId`.
     mapping(uint256 => Request) public requests;
@@ -44,7 +44,7 @@ contract Bulletin is OwnableRoles, IBulletin {
     modifier isResourceAvailable(bytes32 source) {
         if (source != 0) {
             (address _b, uint256 _r) = decodeAsset(source);
-            Resource memory r = IBulletin(_b).getResource(_r);
+            Resource memory r = getResource(_r);
             if (r.from != msg.sender) revert NotOriginalPoster();
         }
 
@@ -80,8 +80,7 @@ contract Bulletin is OwnableRoles, IBulletin {
     }
 
     function activate(address user, uint256 max) public onlyOwner {
-        credits[user].limit = max;
-        credits[user].amount = max;
+        credits[user] = Credit({limit: max, amount: max});
     }
 
     /* -------------------------------------------------------------------------- */
@@ -243,13 +242,18 @@ contract Bulletin is OwnableRoles, IBulletin {
                 if (amount > r.drop) revert InsufficientAmount();
                 requests[_requestId].drop = r.drop - amount;
 
-                // Confirm if creditworthy.
-                if (isCreditworthy(t.from)) {
-                    // Transfer payment.
+                Credit memory c = credits[t.from];
+                if (c.limit == 0) {
                     route(r.currency, address(this), t.from, amount);
                 } else {
-                    // Build credit.
-                    build(t.from, amount);
+                    // Confirm if creditworthy.
+                    if (c.limit > c.amount) {
+                        // Transfer payment.
+                        route(r.currency, address(this), t.from, amount);
+                    } else {
+                        // Build credit.
+                        build(t.from, amount);
+                    }
                 }
             } else {}
 
@@ -282,13 +286,18 @@ contract Bulletin is OwnableRoles, IBulletin {
 
             // Accept payment.
             if (t.amount != 0) {
-                // Confirm if creditworthy.
-                if (isCreditworthy(t.from)) {
-                    // Transfer payment.
+                Credit memory c = credits[t.from];
+                if (c.limit == 0) {
                     route(t.currency, address(this), r.from, t.amount);
                 } else {
-                    // Build credit.
-                    build(t.from, t.amount);
+                    // Confirm if creditworthy.
+                    if (c.limit > c.amount) {
+                        // Transfer payment.
+                        route(t.currency, address(this), r.from, t.amount);
+                    } else {
+                        // Build credit.
+                        build(t.from, t.amount);
+                    }
                 }
             } else {}
 
@@ -358,12 +367,11 @@ contract Bulletin is OwnableRoles, IBulletin {
     }
 
     /// @dev Helper function to build credit for user.
-    function build(address user, uint256 amount) public {
-        if (credits[user].limit > 0) {
-            uint256 gap = credits[msg.sender].limit -
-                credits[msg.sender].amount;
-            if (gap > amount) credits[msg.sender].amount += amount;
-            else credits[msg.sender].amount += gap;
+    function build(address user, uint256 amount) internal {
+        (uint256 limit, uint256 _amount) = getUserCredit(user);
+        if (limit > 0) {
+            if (limit - _amount > amount) credits[user].amount += amount;
+            else credits[user].amount += limit - _amount;
         } else return;
     }
 
@@ -389,11 +397,11 @@ contract Bulletin is OwnableRoles, IBulletin {
     /*                                 Public Get.                                */
     /* -------------------------------------------------------------------------- */
 
-    function getRequest(uint256 id) external view returns (Request memory r) {
+    function getRequest(uint256 id) public view returns (Request memory r) {
         return requests[id];
     }
 
-    function getResource(uint256 id) external view returns (Resource memory r) {
+    function getResource(uint256 id) public view returns (Resource memory r) {
         return resources[id];
     }
 
@@ -401,14 +409,14 @@ contract Bulletin is OwnableRoles, IBulletin {
     function getResponse(
         uint256 _requestId,
         uint256 _responseId
-    ) external view returns (Trade memory) {
+    ) public view returns (Trade memory) {
         return responsesPerRequest[_requestId][_responseId];
     }
 
     function getExchange(
         uint256 _resourceId,
         uint256 _exchangeId
-    ) external view returns (Trade memory) {
+    ) public view returns (Trade memory) {
         return exchangesPerResource[_resourceId][_exchangeId];
     }
 
@@ -439,12 +447,16 @@ contract Bulletin is OwnableRoles, IBulletin {
         }
     }
 
+    function getUserCredit(
+        address user
+    ) public view returns (uint256, uint256) {
+        Credit memory c = credits[user];
+        return (c.limit, c.amount);
+    }
+
     function isCreditworthy(address user) public view returns (bool) {
-        return
-            (credits[user].limit > 0 &&
-                credits[user].limit == credits[user].amount)
-                ? true
-                : false;
+        Credit memory c = credits[user];
+        return (c.limit > 0 && c.limit == c.amount) ? true : false;
     }
 
     receive() external payable virtual {}
