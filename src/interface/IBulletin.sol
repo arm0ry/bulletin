@@ -9,6 +9,14 @@ interface IBulletin {
     /* -------------------------------------------------------------------------- */
 
     /**
+     * @dev A struct containing data required for creating a credit line.
+     */
+    struct Credit {
+        uint256 limit;
+        uint256 amount;
+    }
+
+    /**
      * @dev A struct containing data required for creating a request.
      */
     struct Request {

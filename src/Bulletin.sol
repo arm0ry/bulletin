@@ -4,6 +4,7 @@ pragma solidity >=0.8.4;
 import {IBulletin} from "src/interface/IBulletin.sol";
 import {OwnableRoles} from "src/auth/OwnableRoles.sol";
 import {SafeTransferLib} from "lib/solady/src/utils/SafeTransferLib.sol";
+import {IERC20} from "src/interface/IERC20.sol";
 
 /// @title Bulletin
 /// @notice A system to store and interact with requests and resources.
@@ -14,7 +15,7 @@ contract Bulletin is OwnableRoles, IBulletin {
     /* -------------------------------------------------------------------------- */
 
     /// The permissioned role reserved for autonomous agents.
-    uint40 internal constant AGENT_ROLE = 1 << 1;
+    uint40 internal constant AGENT_ROLE = 1 << 0;
 
     /* -------------------------------------------------------------------------- */
     /*                                  Storage.                                  */
@@ -22,6 +23,9 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     uint40 public requestId;
     uint40 public resourceId;
+
+    // Mappings by user.
+    mapping(address => IBulletin.Credit) public credits;
 
     // Mappings by `requestId`.
     mapping(uint256 => Request) public requests;
@@ -54,7 +58,16 @@ contract Bulletin is OwnableRoles, IBulletin {
         uint256 amount
     ) {
         if (from != msg.sender) revert Unauthorized();
-        if (amount != 0) route(currency, from, to, amount);
+        if (amount != 0) {
+            unchecked {
+                if (
+                    (currency == address(0) &&
+                        address(from).balance < amount) ||
+                    IERC20(currency).balanceOf(from) < amount
+                ) credits[msg.sender].amount -= amount;
+                else route(currency, from, to, amount);
+            }
+        }
         _;
     }
 
@@ -64,6 +77,11 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     function init(address owner) public {
         _initializeOwner(owner);
+    }
+
+    function activate(address user, uint256 max) public onlyOwner {
+        credits[user].limit = max;
+        credits[user].amount = max;
     }
 
     /* -------------------------------------------------------------------------- */
@@ -216,26 +234,30 @@ contract Bulletin is OwnableRoles, IBulletin {
         Request memory r = requests[_requestId];
         if (r.from != msg.sender) revert NotOriginalPoster();
 
-        if (!responsesPerRequest[_requestId][responseId].approved) {
+        Trade memory t = responsesPerRequest[_requestId][responseId];
+        if (!t.approved) {
             // Aprove trade.
             responsesPerRequest[_requestId][responseId].approved = true;
 
-            if (amount > 0) {
+            if (amount != 0) {
                 if (amount > r.drop) revert InsufficientAmount();
                 requests[_requestId].drop = r.drop - amount;
 
-                route(
-                    r.currency,
-                    address(this),
-                    responsesPerRequest[_requestId][responseId].from,
-                    amount
-                );
-            }
+                // Confirm if creditworthy.
+                if (isCreditworthy(t.from)) {
+                    // Transfer payment.
+                    route(r.currency, address(this), t.from, amount);
+                } else {
+                    // Build credit.
+                    build(t.from, amount);
+                }
+            } else {}
 
             emit ResponseUpdated(_requestId, responseId, msg.sender);
         } else revert Approved();
     }
 
+    // TODO: Merge with withdrawExchange()
     function withdrawResponse(
         uint256 _requestId,
         uint256 _responseId
@@ -259,8 +281,16 @@ contract Bulletin is OwnableRoles, IBulletin {
             exchangesPerResource[_resourceId][exchangeId].approved = true;
 
             // Accept payment.
-            if (t.amount != 0)
-                route(t.currency, address(this), r.from, t.amount);
+            if (t.amount != 0) {
+                // Confirm if creditworthy.
+                if (isCreditworthy(t.from)) {
+                    // Transfer payment.
+                    route(t.currency, address(this), r.from, t.amount);
+                } else {
+                    // Build credit.
+                    build(t.from, t.amount);
+                }
+            } else {}
 
             emit ExchangeUpdated(_resourceId, exchangeId, msg.sender);
         } else revert Approved();
@@ -327,6 +357,16 @@ contract Bulletin is OwnableRoles, IBulletin {
         }
     }
 
+    /// @dev Helper function to build credit for user.
+    function build(address user, uint256 amount) public {
+        if (credits[user].limit > 0) {
+            uint256 gap = credits[msg.sender].limit -
+                credits[msg.sender].amount;
+            if (gap > amount) credits[msg.sender].amount += amount;
+            else credits[msg.sender].amount += gap;
+        } else return;
+    }
+
     // Encode bulletin address and ask/resource id as asset.
     function encodeAsset(
         address bulletin,
@@ -357,6 +397,7 @@ contract Bulletin is OwnableRoles, IBulletin {
         return resources[id];
     }
 
+    // TODO: Merge with getExchange()
     function getResponse(
         uint256 _requestId,
         uint256 _responseId
@@ -371,6 +412,7 @@ contract Bulletin is OwnableRoles, IBulletin {
         return exchangesPerResource[_resourceId][_exchangeId];
     }
 
+    // TODO: Merge with getExchangeByUser()
     function getResponseByUser(
         uint256 _requestId,
         address user
@@ -395,6 +437,14 @@ contract Bulletin is OwnableRoles, IBulletin {
                 exchangeId = i;
             }
         }
+    }
+
+    function isCreditworthy(address user) public view returns (bool) {
+        return
+            (credits[user].limit > 0 &&
+                credits[user].limit == credits[user].amount)
+                ? true
+                : false;
     }
 
     receive() external payable virtual {}

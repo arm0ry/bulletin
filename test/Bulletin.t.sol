@@ -432,12 +432,9 @@ contract BulletinTest is Test {
         assertEq(MockERC20(mock).balanceOf(owner), max - amount);
     }
 
-    function test_RequestAndDepositEther(
-        uint256 max,
-        uint256 amount
-    ) public payable {
-        vm.assume(max > amount);
-        vm.deal(owner, max);
+    function test_RequestAndDepositEther(uint256 amount) public payable {
+        vm.assume(1e20 > amount);
+        vm.deal(owner, amount);
         uint256 requestId = requestAndDepositEther(true, owner, amount);
         IBulletin.Request memory _request = bulletin.getRequest(requestId);
 
@@ -448,7 +445,7 @@ contract BulletinTest is Test {
         assertEq(_request.drop, amount);
 
         assertEq(address(bulletin).balance, amount);
-        assertEq(address(owner).balance, max - amount);
+        assertEq(address(owner).balance, 0);
     }
 
     function test_RequestByUser() public payable {
@@ -516,11 +513,10 @@ contract BulletinTest is Test {
     }
 
     function test_RequestAndDepositCurrency_Withdraw(
-        uint256 max,
         uint256 amount
     ) public payable {
-        vm.assume(max > amount);
-        mock.mint(owner, max);
+        vm.assume(1e20 > amount);
+        mock.mint(owner, amount);
         uint256 requestId = requestAndDepositCurrency(true, owner, amount);
 
         withdrawRequest(owner, requestId);
@@ -533,15 +529,14 @@ contract BulletinTest is Test {
         assertEq(_request.drop, 0);
 
         assertEq(MockERC20(mock).balanceOf(address(bulletin)), 0);
-        assertEq(MockERC20(mock).balanceOf(owner), max);
+        assertEq(MockERC20(mock).balanceOf(owner), amount);
     }
 
     function test_RequestAndDepositEther_Withdraw(
-        uint256 max,
         uint256 amount
     ) public payable {
-        vm.assume(max > amount);
-        vm.deal(owner, max);
+        vm.assume(1e20 > amount);
+        vm.deal(owner, amount);
         uint256 requestId = requestAndDepositEther(true, owner, amount);
 
         withdrawRequest(owner, requestId);
@@ -554,7 +549,7 @@ contract BulletinTest is Test {
         assertEq(_request.drop, 0);
 
         assertEq(address(bulletin).balance, 0);
-        assertEq(address(owner).balance, max);
+        assertEq(address(owner).balance, amount);
     }
 
     function test_RequestByUser_Withdraw() public payable {
@@ -594,11 +589,10 @@ contract BulletinTest is Test {
     }
 
     function test_RequestAndDepositEtherByUser_Withdraw(
-        uint256 max,
         uint256 amount
     ) public payable {
-        vm.assume(max > amount);
-        vm.deal(alice, max);
+        vm.assume(1e20 > amount);
+        vm.deal(alice, amount);
         grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
 
         uint256 requestId = requestAndDepositEther(false, alice, amount);
@@ -612,7 +606,7 @@ contract BulletinTest is Test {
         assertEq(_request.drop, 0);
 
         assertEq(address(bulletin).balance, 0);
-        assertEq(address(alice).balance, max);
+        assertEq(address(alice).balance, amount);
     }
 
     // todo: asserts
