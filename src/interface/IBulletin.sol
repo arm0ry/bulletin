@@ -70,10 +70,10 @@ interface IBulletin {
     /*                     Public / External Write Functions.                     */
     /* -------------------------------------------------------------------------- */
 
-    function request(Request calldata r) external payable;
-    function respond(uint256 requestId, Trade calldata t) external payable;
+    function request(Request calldata r) external;
+    function respond(uint256 requestId, Trade calldata t) external;
     function resource(Resource calldata r) external;
-    function exchange(uint256 resourceId, Trade calldata t) external payable;
+    function exchange(uint256 resourceId, Trade calldata t) external;
 
     function withdrawRequest(uint256 requestId) external;
     function withdrawResource(uint256 resourceId) external;
@@ -105,11 +105,11 @@ interface IBulletin {
         uint256 exchangeId
     ) external view returns (Trade memory);
 
-    // function filterTrades(
-    //     uint256 id,
-    //     bool approved,
-    //     uint40 role
-    // ) external returns (Trade[] memory _trades);
+    function getUserCredit(
+        address user
+    ) external view returns (Credit memory c);
+
+    function isCreditworthy(address user) external view returns (bool);
 
     /* -------------------------------------------------------------------------- */
     /*                      Public / External Pure Functions.                     */

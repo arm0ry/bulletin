@@ -39,7 +39,6 @@ contract BulletinTest is Test {
     string TEST2 = "TEST2";
     bytes constant BYTES = bytes(string("BYTES"));
     bytes constant BYTES2 = bytes(string("BYTES2"));
-    uint256 defaultBulletinBalance = 10 ether;
 
     uint256[] itemIds;
 
@@ -128,24 +127,6 @@ contract BulletinTest is Test {
         id = bulletin.requestId();
     }
 
-    function requestAndDepositEther(
-        bool isOwner,
-        address user,
-        uint256 amount
-    ) public payable returns (uint256 id) {
-        IBulletin.Request memory a = IBulletin.Request({
-            from: user,
-            title: TEST,
-            detail: TEST,
-            currency: address(0),
-            drop: amount
-        });
-
-        vm.prank((isOwner) ? owner : user);
-        bulletin.request{value: amount}(a);
-        id = bulletin.requestId();
-    }
-
     function requestAndDepositCurrency(
         bool isOwner,
         address user,
@@ -211,16 +192,6 @@ contract BulletinTest is Test {
         vm.prank(op);
         bulletin.withdrawResource(resourceId);
     }
-
-    // function settleRequest(
-    //     address op,
-    //     uint40 requestId,
-    //     uint40 role,
-    //     uint16[] memory percentages
-    // ) public payable {
-    //     vm.prank(op);
-    //     bulletin.settleRequest(requestId, true, role, percentages);
-    // }
 
     function setupResourceResponse(
         address user,
@@ -459,22 +430,6 @@ contract BulletinTest is Test {
         assertEq(MockERC20(mock).balanceOf(owner), max - amount);
     }
 
-    function test_RequestAndDepositEther(uint256 amount) public payable {
-        vm.assume(1e20 > amount);
-        vm.deal(owner, amount);
-        uint256 requestId = requestAndDepositEther(true, owner, amount);
-        IBulletin.Request memory _request = bulletin.getRequest(requestId);
-
-        assertEq(_request.from, owner);
-        assertEq(_request.title, TEST);
-        assertEq(_request.detail, TEST);
-        assertEq(_request.currency, address(0));
-        assertEq(_request.drop, amount);
-
-        assertEq(address(bulletin).balance, amount);
-        assertEq(address(owner).balance, 0);
-    }
-
     function test_RequestByUser() public payable {
         grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
 
@@ -509,23 +464,6 @@ contract BulletinTest is Test {
         assertEq(MockERC20(mock).balanceOf(alice), max - amount);
     }
 
-    function test_RequestAndDepositEtherByUser(uint256 amount) public payable {
-        vm.deal(alice, amount);
-        grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
-
-        uint256 requestId = requestAndDepositEther(false, alice, amount);
-        IBulletin.Request memory _request = bulletin.getRequest(requestId);
-
-        assertEq(_request.from, alice);
-        assertEq(_request.title, TEST);
-        assertEq(_request.detail, TEST);
-        assertEq(_request.currency, address(0));
-        assertEq(_request.drop, amount);
-
-        assertEq(address(bulletin).balance, amount);
-        assertEq(address(alice).balance, 0);
-    }
-
     function test_Request_Withdraw() public payable {
         uint256 requestId = request(true, owner);
 
@@ -557,26 +495,6 @@ contract BulletinTest is Test {
 
         assertEq(MockERC20(mock).balanceOf(address(bulletin)), 0);
         assertEq(MockERC20(mock).balanceOf(owner), amount);
-    }
-
-    function test_RequestAndDepositEther_Withdraw(
-        uint256 amount
-    ) public payable {
-        vm.assume(1e20 > amount);
-        vm.deal(owner, amount);
-        uint256 requestId = requestAndDepositEther(true, owner, amount);
-
-        withdrawRequest(owner, requestId);
-
-        IBulletin.Request memory _request = bulletin.getRequest(requestId);
-        assertEq(_request.from, address(0));
-        assertEq(_request.title, "");
-        assertEq(_request.detail, "");
-        assertEq(_request.currency, address(0));
-        assertEq(_request.drop, 0);
-
-        assertEq(address(bulletin).balance, 0);
-        assertEq(address(owner).balance, amount);
     }
 
     function test_RequestByUser_Withdraw() public payable {
@@ -613,27 +531,6 @@ contract BulletinTest is Test {
 
         assertEq(MockERC20(mock).balanceOf(address(bulletin)), 0);
         assertEq(MockERC20(mock).balanceOf(alice), max);
-    }
-
-    function test_RequestAndDepositEtherByUser_Withdraw(
-        uint256 amount
-    ) public payable {
-        vm.assume(1e20 > amount);
-        vm.deal(alice, amount);
-        grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
-
-        uint256 requestId = requestAndDepositEther(false, alice, amount);
-        withdrawRequest(alice, requestId);
-
-        IBulletin.Request memory _request = bulletin.getRequest(requestId);
-        assertEq(_request.from, address(0));
-        assertEq(_request.title, "");
-        assertEq(_request.detail, "");
-        assertEq(_request.currency, address(0));
-        assertEq(_request.drop, 0);
-
-        assertEq(address(bulletin).balance, 0);
-        assertEq(address(alice).balance, amount);
     }
 
     // todo: asserts

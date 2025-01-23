@@ -60,10 +60,9 @@ contract Bulletin is OwnableRoles, IBulletin {
         if (from != msg.sender) revert Unauthorized();
         if (amount != 0) {
             unchecked {
-                // Access `Credit` only when currency is insufficient.
+                // Access `Credit` only when currency is insufficient.)
                 if (
-                    (currency == address(0) &&
-                        address(from).balance < amount) ||
+                    currency == address(0) ||
                     IERC20(currency).balanceOf(from) < amount
                 ) credits[msg.sender].amount -= amount;
                 else route(currency, from, to, amount);
@@ -90,15 +89,13 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     function request(
         Request calldata r
-    ) external payable deposit(r.from, address(this), r.currency, r.drop) {
+    ) external deposit(r.from, address(this), r.currency, r.drop) {
         unchecked {
             _setRequest(++requestId, r);
         }
     }
 
-    function requestByAgent(
-        Request calldata r
-    ) external payable onlyRoles(AGENT_ROLE) {
+    function requestByAgent(Request calldata r) external onlyRoles(AGENT_ROLE) {
         // Transfer currency drop.
         route(r.currency, r.from, address(this), r.drop);
 
@@ -112,7 +109,6 @@ contract Bulletin is OwnableRoles, IBulletin {
         Trade calldata t
     )
         external
-        payable
         isResourceAvailable(t.resource)
         deposit(msg.sender, address(this), t.currency, t.amount)
     {
@@ -166,7 +162,6 @@ contract Bulletin is OwnableRoles, IBulletin {
         Trade calldata t
     )
         external
-        payable
         isResourceAvailable(t.resource)
         deposit(msg.sender, address(this), t.currency, t.amount)
     {
@@ -348,11 +343,7 @@ contract Bulletin is OwnableRoles, IBulletin {
         address to,
         uint256 amount
     ) internal {
-        if (currency == address(0)) {
-            if (from == address(this))
-                SafeTransferLib.safeTransferETH(to, amount);
-            else if (msg.value != amount) revert InsufficientAmount();
-        } else {
+        if (currency != address(0)) {
             (from == address(this))
                 ? SafeTransferLib.safeTransfer(currency, to, amount)
                 : SafeTransferLib.safeTransferFrom(currency, from, to, amount);
@@ -448,6 +439,4 @@ contract Bulletin is OwnableRoles, IBulletin {
         Credit memory c = credits[user];
         return (c.limit > 0 && c.limit == c.amount) ? true : false;
     }
-
-    receive() external payable virtual {}
 }
