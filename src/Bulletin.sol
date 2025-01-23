@@ -60,6 +60,7 @@ contract Bulletin is OwnableRoles, IBulletin {
         if (from != msg.sender) revert Unauthorized();
         if (amount != 0) {
             unchecked {
+                // Access `Credit` only when currency is insufficient.
                 if (
                     (currency == address(0) &&
                         address(from).balance < amount) ||
@@ -247,13 +248,9 @@ contract Bulletin is OwnableRoles, IBulletin {
                     route(r.currency, address(this), t.from, amount);
                 } else {
                     // Confirm if creditworthy.
-                    if (c.limit > c.amount) {
-                        // Transfer payment.
-                        route(r.currency, address(this), t.from, amount);
-                    } else {
-                        // Build credit.
-                        build(t.from, amount);
-                    }
+                    (c.limit != c.amount)
+                        ? build(t.from, amount)
+                        : route(r.currency, address(this), t.from, amount);
                 }
             } else {}
 
@@ -286,18 +283,14 @@ contract Bulletin is OwnableRoles, IBulletin {
 
             // Accept payment.
             if (t.amount != 0) {
-                Credit memory c = credits[t.from];
+                Credit memory c = credits[r.from];
                 if (c.limit == 0) {
                     route(t.currency, address(this), r.from, t.amount);
                 } else {
                     // Confirm if creditworthy.
-                    if (c.limit > c.amount) {
-                        // Transfer payment.
-                        route(t.currency, address(this), r.from, t.amount);
-                    } else {
-                        // Build credit.
-                        build(t.from, t.amount);
-                    }
+                    (c.limit != c.amount)
+                        ? build(r.from, t.amount)
+                        : route(t.currency, address(this), r.from, t.amount);
                 }
             } else {}
 
@@ -368,10 +361,10 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     /// @dev Helper function to build credit for user.
     function build(address user, uint256 amount) internal {
-        (uint256 limit, uint256 _amount) = getUserCredit(user);
-        if (limit > 0) {
-            if (limit - _amount > amount) credits[user].amount += amount;
-            else credits[user].amount += limit - _amount;
+        Credit memory c = getUserCredit(user);
+        if (c.limit > 0) {
+            if (c.limit - c.amount > amount) credits[user].amount += amount;
+            else credits[user].amount += c.limit - c.amount;
         } else return;
     }
 
@@ -447,11 +440,8 @@ contract Bulletin is OwnableRoles, IBulletin {
         }
     }
 
-    function getUserCredit(
-        address user
-    ) public view returns (uint256, uint256) {
-        Credit memory c = credits[user];
-        return (c.limit, c.amount);
+    function getUserCredit(address user) public view returns (Credit memory c) {
+        c = credits[user];
     }
 
     function isCreditworthy(address user) public view returns (bool) {

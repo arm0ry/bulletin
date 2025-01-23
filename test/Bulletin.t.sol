@@ -95,6 +95,16 @@ contract BulletinTest is Test {
         Bulletin(payable(_bulletin)).grantRoles(user, role);
     }
 
+    function activate(
+        address _bulletin,
+        address _owner,
+        address user,
+        uint256 amount
+    ) public payable {
+        vm.prank(_owner);
+        Bulletin(payable(_bulletin)).activate(user, amount);
+    }
+
     /// -----------------------------------------------------------------------
     /// Helpers.
     /// -----------------------------------------------------------------------
@@ -152,6 +162,23 @@ contract BulletinTest is Test {
         mockApprove((isOwner) ? owner : user, address(bulletin), amount);
 
         vm.prank((isOwner) ? owner : user);
+        bulletin.request(a);
+        id = bulletin.requestId();
+    }
+
+    function requestByCredit(
+        address user,
+        uint256 amount
+    ) public payable returns (uint256 id) {
+        IBulletin.Request memory a = IBulletin.Request({
+            from: user,
+            title: TEST,
+            detail: TEST,
+            currency: address(0),
+            drop: amount
+        });
+
+        vm.prank(user);
         bulletin.request(a);
         id = bulletin.requestId();
     }
@@ -647,6 +674,124 @@ contract BulletinTest is Test {
         assertEq(_resource.from, address(0));
         assertEq(_resource.title, "");
         assertEq(_resource.detail, "");
+    }
+
+    function test_ApproveExchangeForResource_NoCreditPosterPoolPayout(
+        uint256 amount
+    ) public payable {
+        vm.assume(10 ether > amount);
+        vm.assume(amount > 10_000);
+
+        activate(address(bulletin), owner, bob, 10 ether);
+        mock.mint(address(bulletin), amount);
+
+        uint256 resourceId = resource(false, alice);
+        uint256 exchangeId = setupCurrencyExchange(
+            bob,
+            resourceId,
+            address(mock),
+            amount
+        );
+
+        IBulletin.Trade memory trade = bulletin.getExchange(
+            resourceId,
+            exchangeId
+        );
+        assertEq(trade.approved, false);
+        assertEq(trade.from, bob);
+        assertEq(trade.currency, address(mock));
+        assertEq(trade.amount, amount);
+        assertEq(trade.resource, 0);
+        assertEq(trade.content, TEST);
+        assertEq(trade.data, BYTES);
+        assertEq(mock.balanceOf(bob), 0);
+        assertEq(mock.balanceOf(address(bulletin)), amount);
+
+        IBulletin.Credit memory credit = bulletin.getUserCredit(bob);
+        assertEq(credit.limit, 10 ether);
+        assertEq(credit.amount, 10 ether - amount);
+
+        approveExchange(alice, resourceId, exchangeId);
+        trade = bulletin.getExchange(resourceId, exchangeId);
+        assertEq(trade.approved, true);
+        assertEq(trade.from, bob);
+        assertEq(trade.currency, address(mock));
+        assertEq(trade.amount, amount);
+        assertEq(mock.balanceOf(alice), amount);
+        assertEq(mock.balanceOf(address(bulletin)), 0);
+    }
+
+    function test_ApproveExchangeForResource_FullCreditPosterPoolPayout(
+        uint256 amount
+    ) public payable {
+        vm.assume(10 ether > amount);
+        vm.assume(amount > 10_000);
+
+        activate(address(bulletin), owner, bob, 10 ether);
+        activate(address(bulletin), owner, alice, 10 ether);
+        mock.mint(address(bulletin), amount);
+
+        uint256 resourceId = resource(false, alice);
+        uint256 exchangeId = setupCurrencyExchange(
+            bob,
+            resourceId,
+            address(mock),
+            amount
+        );
+
+        IBulletin.Credit memory credit = bulletin.getUserCredit(bob);
+        assertEq(credit.limit, 10 ether);
+        assertEq(credit.amount, 10 ether - amount);
+
+        approveExchange(alice, resourceId, exchangeId);
+        IBulletin.Trade memory trade = bulletin.getExchange(
+            resourceId,
+            exchangeId
+        );
+        assertEq(trade.approved, true);
+        assertEq(trade.from, bob);
+        assertEq(trade.currency, address(mock));
+        assertEq(trade.amount, amount);
+        assertEq(mock.balanceOf(alice), amount);
+        assertEq(mock.balanceOf(address(bulletin)), 0);
+    }
+
+    function test_ApproveExchangeForResource_BuildCredit(
+        uint256 amount
+    ) public payable {
+        vm.assume(5 ether > amount);
+        vm.assume(amount > 10_000);
+
+        // activate(address(bulletin), owner, bob, 10 ether);
+        // activate(address(bulletin), owner, alice, 10 ether);
+        // mock.mint(address(bulletin), amount);
+
+        // uint256 requestId = requestByCredit(alice, 5 ether);
+        // uint256 responseId = setupSimpleResponse(bob, requestId);
+        // approveResponse(alice, requestId, responseId, amount);
+
+        test_ApproveExchangeForResource_FullCreditPosterPoolPayout(5 ether);
+
+        IBulletin.Credit memory credit = bulletin.getUserCredit(bob);
+        assertEq(credit.limit, 10 ether);
+        assertEq(credit.amount, 5 ether);
+
+        uint256 resourceId = resource(false, bob);
+        uint256 exchangeId = setupCurrencyExchange(
+            alice,
+            resourceId,
+            address(0),
+            amount
+        );
+
+        approveExchange(bob, resourceId, exchangeId);
+
+        credit = bulletin.getUserCredit(bob);
+        assertEq(credit.amount, 5 ether + amount);
+
+        credit = bulletin.getUserCredit(alice);
+        assertEq(credit.limit, 10 ether);
+        assertEq(credit.amount, 10 ether - amount);
     }
 
     function test_ExchangeForResource_ApproveCurrency(
