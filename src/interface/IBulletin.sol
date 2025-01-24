@@ -55,8 +55,9 @@ interface IBulletin {
 
     event RequestUpdated(uint256 requestId);
     event ResourceUpdated(uint256 resourceId);
-    event ResponseUpdated(uint256 requestId, uint256 responseId, address from);
-    event ExchangeUpdated(uint256 resourceId, uint256 exchangeId, address from);
+    // event ResponseUpdated(uint256 requestId, uint256 responseId, address from);
+    // event ExchangeUpdated(uint256 resourceId, uint256 exchangeId, address from);
+    event TradeUpdated(bool isResponse, uint256 subjectId, uint256 tradeId);
 
     /* -------------------------------------------------------------------------- */
     /*                                   Errors.                                  */
@@ -77,8 +78,12 @@ interface IBulletin {
 
     function withdrawRequest(uint256 requestId) external;
     function withdrawResource(uint256 resourceId) external;
-    function withdrawResponse(uint256 requestId, uint256 responseId) external;
-    function withdrawExchange(uint256 resourceId, uint256 exchangeId) external;
+
+    function withdrawTrade(
+        bool isResponse,
+        uint256 requestId,
+        uint256 responseId
+    ) external;
 
     function approveResponse(
         uint256 requestId,
@@ -95,19 +100,13 @@ interface IBulletin {
 
     function getResource(uint256 id) external view returns (Resource memory r);
 
-    function getResponse(
+    function getTrade(
+        bool isResponse,
         uint256 requestId,
         uint256 responseId
     ) external view returns (Trade memory);
 
-    function getExchange(
-        uint256 resourceId,
-        uint256 exchangeId
-    ) external view returns (Trade memory);
-
-    function getUserCredit(
-        address user
-    ) external view returns (Credit memory c);
+    function getCredit(address user) external view returns (Credit memory c);
 
     function isCreditworthy(address user) external view returns (bool);
 

@@ -112,7 +112,8 @@ contract Bulletin is OwnableRoles, IBulletin {
         isResourceAvailable(t.resource)
         deposit(msg.sender, address(this), t.currency, t.amount)
     {
-        (uint256 responseId, Trade memory _t) = getResponseByUser(
+        (uint256 responseId, Trade memory _t) = getTradeByUser(
+            true,
             _requestId,
             msg.sender
         );
@@ -137,7 +138,7 @@ contract Bulletin is OwnableRoles, IBulletin {
             data: t.data
         });
 
-        emit ResponseUpdated(_requestId, responseId, msg.sender);
+        emit TradeUpdated(true, _requestId, responseId);
     }
 
     function resource(Resource calldata r) external {
@@ -165,7 +166,8 @@ contract Bulletin is OwnableRoles, IBulletin {
         isResourceAvailable(t.resource)
         deposit(msg.sender, address(this), t.currency, t.amount)
     {
-        (uint256 exchangeId, Trade memory _t) = getExchangeByUser(
+        (uint256 exchangeId, Trade memory _t) = getTradeByUser(
+            false,
             _resourceId,
             msg.sender
         );
@@ -191,7 +193,7 @@ contract Bulletin is OwnableRoles, IBulletin {
             data: t.data
         });
 
-        emit ExchangeUpdated(_resourceId, exchangeId, msg.sender);
+        emit TradeUpdated(false, _resourceId, exchangeId);
     }
 
     /* -------------------------------------------------------------------------- */
@@ -201,7 +203,7 @@ contract Bulletin is OwnableRoles, IBulletin {
     /// @notice Request
 
     function withdrawRequest(uint256 _requestId) external {
-        Request memory r = requests[_requestId];
+        Request storage r = requests[_requestId];
         if (r.from != msg.sender) revert NotOriginalPoster();
 
         route(r.currency, address(this), r.from, r.drop);
@@ -212,8 +214,8 @@ contract Bulletin is OwnableRoles, IBulletin {
     /// @notice Resource
 
     function withdrawResource(uint256 _resourceId) external {
-        Resource memory _r = resources[_resourceId];
-        if (_r.from != msg.sender) revert NotOriginalPoster();
+        Resource storage r = resources[_resourceId];
+        if (r.from != msg.sender) revert NotOriginalPoster();
 
         delete resources[_resourceId];
         emit ResourceUpdated(_resourceId);
@@ -226,10 +228,10 @@ contract Bulletin is OwnableRoles, IBulletin {
         uint256 responseId,
         uint256 amount
     ) external {
-        Request memory r = requests[_requestId];
+        Request storage r = requests[_requestId];
         if (r.from != msg.sender) revert NotOriginalPoster();
 
-        Trade memory t = responsesPerRequest[_requestId][responseId];
+        Trade storage t = responsesPerRequest[_requestId][responseId];
         if (!t.approved) {
             // Aprove trade.
             responsesPerRequest[_requestId][responseId].approved = true;
@@ -238,7 +240,7 @@ contract Bulletin is OwnableRoles, IBulletin {
                 if (amount > r.drop) revert InsufficientAmount();
                 requests[_requestId].drop = r.drop - amount;
 
-                Credit memory c = credits[t.from];
+                Credit storage c = credits[t.from];
                 if (c.limit == 0) {
                     route(r.currency, address(this), t.from, amount);
                 } else {
@@ -249,32 +251,18 @@ contract Bulletin is OwnableRoles, IBulletin {
                 }
             } else {}
 
-            emit ResponseUpdated(_requestId, responseId, msg.sender);
+            emit TradeUpdated(true, _requestId, responseId);
         } else revert Approved();
     }
 
-    // TODO: Merge with withdrawExchange()
-    function withdrawResponse(
-        uint256 _requestId,
-        uint256 _responseId
-    ) external {
-        Trade memory t = responsesPerRequest[_requestId][_responseId];
-        if (t.approved) revert Approved();
-        if (t.from != msg.sender) revert NotOriginalPoster();
-
-        route(t.currency, address(this), t.from, t.amount);
-        delete responsesPerRequest[_requestId][_responseId];
-        emit ResponseUpdated(_requestId, _responseId, t.from);
-    }
-
     function approveExchange(uint256 _resourceId, uint256 exchangeId) external {
-        Resource memory r = resources[_resourceId];
+        Resource storage r = resources[_resourceId];
         if (r.from != msg.sender) revert NotOriginalPoster();
 
-        Trade memory t = exchangesPerResource[_resourceId][exchangeId];
+        Trade storage t = exchangesPerResource[_resourceId][exchangeId];
         if (!t.approved) {
             // Aprove trade.
-            exchangesPerResource[_resourceId][exchangeId].approved = true;
+            t.approved = true;
 
             // Accept payment.
             if (t.amount != 0) {
@@ -289,21 +277,28 @@ contract Bulletin is OwnableRoles, IBulletin {
                 }
             } else {}
 
-            emit ExchangeUpdated(_resourceId, exchangeId, msg.sender);
+            emit TradeUpdated(false, _resourceId, exchangeId);
         } else revert Approved();
     }
 
-    function withdrawExchange(
-        uint256 _resourceId,
-        uint256 _exchangeId
+    function withdrawTrade(
+        bool isResponse,
+        uint256 subjectId,
+        uint256 tradeId
     ) external {
-        Trade memory t = exchangesPerResource[_resourceId][_exchangeId];
+        Trade storage t;
+        (isResponse)
+            ? t = responsesPerRequest[subjectId][tradeId]
+            : t = exchangesPerResource[subjectId][tradeId];
         if (t.approved) revert Approved();
         if (t.from != msg.sender) revert NotOriginalPoster();
 
         route(t.currency, address(this), t.from, t.amount);
-        delete exchangesPerResource[_resourceId][_exchangeId];
-        emit ExchangeUpdated(_resourceId, _exchangeId, t.from);
+
+        (isResponse)
+            ? delete responsesPerRequest[subjectId][tradeId]
+            : delete exchangesPerResource[subjectId][tradeId];
+        emit TradeUpdated(isResponse, subjectId, tradeId);
     }
 
     /* -------------------------------------------------------------------------- */
@@ -352,7 +347,7 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     /// @dev Helper function to build credit for user.
     function build(address user, uint256 amount) internal {
-        Credit memory c = getUserCredit(user);
+        Credit memory c = getCredit(user);
         if (c.limit > 0) {
             if (c.limit - c.amount > amount) credits[user].amount += amount;
             else credits[user].amount += c.limit - c.amount;
@@ -389,49 +384,41 @@ contract Bulletin is OwnableRoles, IBulletin {
         return resources[id];
     }
 
-    // TODO: Merge with getExchange()
-    function getResponse(
-        uint256 _requestId,
-        uint256 _responseId
+    function getTrade(
+        bool isResponse,
+        uint256 subjectId,
+        uint256 tradeId
     ) public view returns (Trade memory) {
-        return responsesPerRequest[_requestId][_responseId];
+        return
+            (isResponse)
+                ? responsesPerRequest[subjectId][tradeId]
+                : exchangesPerResource[subjectId][tradeId];
     }
 
-    function getExchange(
-        uint256 _resourceId,
-        uint256 _exchangeId
-    ) public view returns (Trade memory) {
-        return exchangesPerResource[_resourceId][_exchangeId];
-    }
-
-    // TODO: Merge with getExchangeByUser()
-    function getResponseByUser(
-        uint256 _requestId,
+    function getTradeByUser(
+        bool isResponse,
+        uint256 subjectId,
         address user
-    ) public view returns (uint256 responseId, Trade memory t) {
-        uint256 length = responseIdsPerRequest[_requestId];
+    ) public view returns (uint256 tradeId, Trade memory t) {
+        uint256 length = (isResponse)
+            ? responseIdsPerRequest[subjectId]
+            : exchangeIdsPerResource[subjectId];
         for (uint256 i = 1; i <= length; ++i) {
-            if (responsesPerRequest[_requestId][i].from == user) {
-                t = responsesPerRequest[_requestId][i];
-                responseId = i;
+            if (isResponse) {
+                if (responsesPerRequest[subjectId][i].from == user) {
+                    t = responsesPerRequest[subjectId][i];
+                    tradeId = i;
+                }
+            } else {
+                if (exchangesPerResource[subjectId][i].from == user) {
+                    t = exchangesPerResource[subjectId][i];
+                    tradeId = i;
+                }
             }
         }
     }
 
-    function getExchangeByUser(
-        uint256 _resourceId,
-        address user
-    ) public view returns (uint256 exchangeId, Trade memory t) {
-        uint256 length = exchangeIdsPerResource[_resourceId];
-        for (uint256 i = 1; i <= length; ++i) {
-            if (exchangesPerResource[_resourceId][i].from == user) {
-                t = exchangesPerResource[_resourceId][i];
-                exchangeId = i;
-            }
-        }
-    }
-
-    function getUserCredit(address user) public view returns (Credit memory c) {
+    function getCredit(address user) public view returns (Credit memory c) {
         c = credits[user];
     }
 
