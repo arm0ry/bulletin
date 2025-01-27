@@ -299,12 +299,34 @@ contract BulletinTest is Test {
         id = bulletin.exchangeIdsPerResource(resourceId);
     }
 
+    function setupCreditExchange(
+        address user,
+        uint256 resourceId,
+        uint256 amount
+    ) public payable returns (uint256 id) {
+        IBulletin.Trade memory trade = IBulletin.Trade({
+            approved: true,
+            from: user,
+            resource: bytes32(0),
+            currency: address(0),
+            amount: amount,
+            content: TEST,
+            data: BYTES
+        });
+        vm.prank(user);
+        bulletin.exchange(resourceId, trade);
+        id = bulletin.exchangeIdsPerResource(resourceId);
+    }
+
     function setupCurrencyExchange(
         address user,
         uint256 resourceId,
         address currency,
         uint256 amount
     ) public payable returns (uint256 id) {
+        vm.prank(user);
+        MockERC20(currency).approve(address(bulletin), amount);
+
         bytes32 r;
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
@@ -570,14 +592,13 @@ contract BulletinTest is Test {
         assertEq(_resource.detail, "");
     }
 
-    function test_ApproveExchangeForResource_NoCreditPosterPoolPayout(
+    function test_ApproveCurrencyExchangeForResource_ByVendor(
         uint256 amount
     ) public payable {
         vm.assume(10 ether > amount);
         vm.assume(amount > 10_000);
 
-        activate(address(bulletin), owner, bob, 10 ether);
-        mock.mint(address(bulletin), amount);
+        mock.mint(bob, amount);
 
         uint256 resourceId = resource(false, alice);
         uint256 exchangeId = setupCurrencyExchange(
@@ -602,11 +623,10 @@ contract BulletinTest is Test {
         assertEq(mock.balanceOf(bob), 0);
         assertEq(mock.balanceOf(address(bulletin)), amount);
 
-        IBulletin.Credit memory credit = bulletin.getCredit(bob);
-        assertEq(credit.limit, 10 ether);
-        assertEq(credit.amount, 10 ether - amount);
-
+        // Approve exchange.
         approveExchange(alice, resourceId, exchangeId);
+
+        // Vendor receive currency.
         trade = bulletin.getTrade(false, resourceId, exchangeId);
         assertEq(trade.approved, true);
         assertEq(trade.from, bob);
@@ -616,7 +636,44 @@ contract BulletinTest is Test {
         assertEq(mock.balanceOf(address(bulletin)), 0);
     }
 
-    function test_ApproveExchangeForResource_FullCreditPosterPoolPayout(
+    function test_ApproveCreditExchangeForResource_ByVendor(
+        uint256 amount
+    ) public payable {
+        vm.assume(10 ether > amount);
+        vm.assume(amount > 10_000);
+
+        activate(address(bulletin), owner, bob, 10 ether);
+
+        uint256 resourceId = resource(false, alice);
+        uint256 exchangeId = setupCreditExchange(bob, resourceId, amount);
+
+        IBulletin.Trade memory trade = bulletin.getTrade(
+            false,
+            resourceId,
+            exchangeId
+        );
+        assertEq(trade.approved, false);
+        assertEq(trade.from, bob);
+        assertEq(trade.currency, address(0));
+        assertEq(trade.amount, amount);
+        assertEq(trade.resource, 0);
+        assertEq(trade.content, TEST);
+        assertEq(trade.data, BYTES);
+
+        IBulletin.Credit memory credit = bulletin.getCredit(bob);
+        assertEq(credit.limit, 10 ether);
+        assertEq(credit.amount, 10 ether - amount);
+
+        // Approve exchange.
+        approveExchange(alice, resourceId, exchangeId);
+
+        // Vendor receive credit.
+        credit = bulletin.getCredit(alice);
+        assertEq(credit.limit, 0);
+        assertEq(credit.amount, amount);
+    }
+
+    function test_ApproveCreditExchangeForResource_ByMember(
         uint256 amount
     ) public payable {
         vm.assume(10 ether > amount);
@@ -624,32 +681,19 @@ contract BulletinTest is Test {
 
         activate(address(bulletin), owner, bob, 10 ether);
         activate(address(bulletin), owner, alice, 10 ether);
-        mock.mint(address(bulletin), amount);
 
         uint256 resourceId = resource(false, alice);
-        uint256 exchangeId = setupCurrencyExchange(
-            bob,
-            resourceId,
-            address(mock),
-            amount
-        );
+        uint256 exchangeId = setupCreditExchange(bob, resourceId, amount);
 
         IBulletin.Credit memory credit = bulletin.getCredit(bob);
         assertEq(credit.limit, 10 ether);
         assertEq(credit.amount, 10 ether - amount);
 
         approveExchange(alice, resourceId, exchangeId);
-        IBulletin.Trade memory trade = bulletin.getTrade(
-            false,
-            resourceId,
-            exchangeId
-        );
-        assertEq(trade.approved, true);
-        assertEq(trade.from, bob);
-        assertEq(trade.currency, address(mock));
-        assertEq(trade.amount, amount);
-        assertEq(mock.balanceOf(alice), amount);
-        assertEq(mock.balanceOf(address(bulletin)), 0);
+
+        credit = bulletin.getCredit(alice);
+        assertEq(credit.limit, 10 ether);
+        assertEq(credit.amount, 10 ether);
     }
 
     function test_ApproveExchangeForResource_BuildCredit(
@@ -658,27 +702,14 @@ contract BulletinTest is Test {
         vm.assume(5 ether > amount);
         vm.assume(amount > 10_000);
 
-        // activate(address(bulletin), owner, bob, 10 ether);
-        // activate(address(bulletin), owner, alice, 10 ether);
-        // mock.mint(address(bulletin), amount);
-
-        // uint256 requestId = requestByCredit(alice, 5 ether);
-        // uint256 responseId = setupSimpleResponse(bob, requestId);
-        // approveResponse(alice, requestId, responseId, amount);
-
-        test_ApproveExchangeForResource_FullCreditPosterPoolPayout(5 ether);
+        test_ApproveCreditExchangeForResource_ByMember(5 ether);
 
         IBulletin.Credit memory credit = bulletin.getCredit(bob);
         assertEq(credit.limit, 10 ether);
         assertEq(credit.amount, 5 ether);
 
         uint256 resourceId = resource(false, bob);
-        uint256 exchangeId = setupCurrencyExchange(
-            alice,
-            resourceId,
-            address(0),
-            amount
-        );
+        uint256 exchangeId = setupCreditExchange(alice, resourceId, amount);
 
         approveExchange(bob, resourceId, exchangeId);
 

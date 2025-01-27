@@ -55,15 +55,12 @@ interface IBulletin {
 
     event RequestUpdated(uint256 requestId);
     event ResourceUpdated(uint256 resourceId);
-    // event ResponseUpdated(uint256 requestId, uint256 responseId, address from);
-    // event ExchangeUpdated(uint256 resourceId, uint256 exchangeId, address from);
     event TradeUpdated(bool isResponse, uint256 subjectId, uint256 tradeId);
 
     /* -------------------------------------------------------------------------- */
     /*                                   Errors.                                  */
     /* -------------------------------------------------------------------------- */
 
-    error InsufficientAmount();
     error NotOriginalPoster();
     error Approved();
 
@@ -107,8 +104,6 @@ interface IBulletin {
     ) external view returns (Trade memory);
 
     function getCredit(address user) external view returns (Credit memory c);
-
-    function isCreditworthy(address user) external view returns (bool);
 
     /* -------------------------------------------------------------------------- */
     /*                      Public / External Pure Functions.                     */
