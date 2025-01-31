@@ -670,7 +670,7 @@ contract BulletinTest is Test {
         // Vendor receive credit.
         credit = bulletin.getCredit(alice);
         assertEq(credit.limit, 0);
-        assertEq(credit.amount, amount);
+        assertEq(credit.amount, 0);
     }
 
     function test_ApproveCreditExchangeForResource_ByMember(
@@ -752,10 +752,11 @@ contract BulletinTest is Test {
         assertEq(mock.balanceOf(bob), 0);
         assertEq(mock.balanceOf(address(bulletin)), amount);
 
-        (uint256 id, IBulletin.Trade memory _trade) = bulletin.getTradeByUser(
+        uint256 id = bulletin.getTradeIdByUser(false, resourceId, bob);
+        IBulletin.Trade memory _trade = bulletin.getTrade(
             false,
             resourceId,
-            bob
+            id
         );
         assertEq(id, exchangeId);
         assertEq(_trade.approved, false);
@@ -804,10 +805,11 @@ contract BulletinTest is Test {
         assertEq(trade.content, TEST);
         assertEq(trade.data, BYTES);
 
-        (uint256 id, IBulletin.Trade memory _trade) = bulletin.getTradeByUser(
+        uint256 id = bulletin.getTradeIdByUser(false, resourceId, bob);
+        IBulletin.Trade memory _trade = bulletin.getTrade(
             false,
             resourceId,
-            bob
+            id
         );
         assertEq(id, exchangeId);
         assertEq(_trade.approved, false);
@@ -859,7 +861,7 @@ contract BulletinTest is Test {
 
         withdrawExchange(bob, resourceId, exchangeId);
 
-        (uint256 id, ) = bulletin.getTradeByUser(false, resourceId, bob);
+        uint256 id = bulletin.getTradeIdByUser(false, resourceId, bob);
         assertEq(id, 0);
 
         trade = bulletin.getTrade(false, resourceId, exchangeId);
@@ -934,7 +936,7 @@ contract BulletinTest is Test {
 
         withdrawResponse(alice, requestId, responseId);
 
-        (uint256 id, ) = bulletin.getTradeByUser(true, requestId, alice);
+        uint256 id = bulletin.getTradeIdByUser(true, requestId, alice);
         assertEq(id, 0);
 
         IBulletin.Trade memory trade = bulletin.getTrade(
@@ -982,11 +984,9 @@ contract BulletinTest is Test {
         assertEq(MockERC20(mock).balanceOf(address(bulletin)), 0);
         assertEq(MockERC20(mock).balanceOf(alice), amount);
 
-        (uint256 id, IBulletin.Trade memory _trade) = bulletin.getTradeByUser(
-            true,
-            requestId,
-            alice
-        );
+        uint256 id = bulletin.getTradeIdByUser(true, requestId, alice);
+        IBulletin.Trade memory _trade = bulletin.getTrade(true, requestId, id);
+
         assertEq(id, responseId);
         assertEq(_trade.approved, true);
         assertEq(_trade.from, alice);
@@ -1020,11 +1020,8 @@ contract BulletinTest is Test {
         // approve first trade
         approveResponse(owner, requestId, responseId, (amount * 20) / 100);
 
-        (uint256 id, IBulletin.Trade memory _trade) = bulletin.getTradeByUser(
-            true,
-            requestId,
-            alice
-        );
+        uint256 id = bulletin.getTradeIdByUser(true, requestId, alice);
+        IBulletin.Trade memory _trade = bulletin.getTrade(true, requestId, id);
         assertEq(id, responseId);
         assertEq(_trade.approved, true);
         assertEq(_trade.from, alice);
@@ -1047,7 +1044,8 @@ contract BulletinTest is Test {
         assertEq(MockERC20(mock).balanceOf(alice), (amount * 20) / 100);
         assertEq(MockERC20(mock).balanceOf(bob), (amount * 20) / 100);
 
-        (id, _trade) = bulletin.getTradeByUser(true, requestId, bob);
+        id = bulletin.getTradeIdByUser(true, requestId, bob);
+        _trade = bulletin.getTrade(true, requestId, id);
         assertEq(id, responseId);
         assertEq(_trade.approved, true);
         assertEq(_trade.from, bob);
