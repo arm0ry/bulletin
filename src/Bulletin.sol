@@ -318,12 +318,14 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     /// @dev Helper function to build credit for user.
     function build(address user, uint256 amount) internal {
-        Credit storage c = credits[user];
-        uint256 gap = c.limit - c.amount;
-        unchecked {
-            (c.limit != 0)
-                ? (gap > amount) ? c.amount += amount : c.amount += gap
-                : amount;
+        if (amount != 0) {
+            Credit storage c = credits[user];
+            uint256 gap = c.limit - c.amount;
+            unchecked {
+                if (c.limit != 0)
+                    (gap > amount) ? c.amount += amount : c.amount += gap;
+                else revert Unauthorized();
+            }
         }
     }
 
@@ -334,7 +336,12 @@ contract Bulletin is OwnableRoles, IBulletin {
         uint256 amount
     ) internal {
         Credit storage c = credits[from];
-        if (currency == address(0) && c.limit != 0) c.amount -= amount;
+
+        if (currency == address(0) && amount != 0) {
+            if (c.limit != 0) c.amount -= amount;
+            else revert Unauthorized();
+        }
+
         if (currency != address(0) && amount != 0)
             route(currency, from, to, amount);
     }

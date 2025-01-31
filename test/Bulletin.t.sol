@@ -636,7 +636,7 @@ contract BulletinTest is Test {
         assertEq(mock.balanceOf(address(bulletin)), 0);
     }
 
-    function test_ApproveCreditExchangeForResource_ByVendor(
+    function test_RejectCreditExchangeForResource_ByVendor(
         uint256 amount
     ) public payable {
         vm.assume(10 ether > amount);
@@ -665,12 +665,9 @@ contract BulletinTest is Test {
         assertEq(credit.amount, 10 ether - amount);
 
         // Approve exchange.
-        approveExchange(alice, resourceId, exchangeId);
-
-        // Vendor receive credit.
-        credit = bulletin.getCredit(alice);
-        assertEq(credit.limit, 0);
-        assertEq(credit.amount, 0);
+        vm.expectRevert(Ownable.Unauthorized.selector);
+        vm.prank(alice);
+        bulletin.approveExchange(resourceId, exchangeId);
     }
 
     function test_ApproveCreditExchangeForResource_ByMember(
@@ -778,7 +775,6 @@ contract BulletinTest is Test {
     }
 
     function test_ExchangeForResource_ApproveResource() public payable {
-        grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
         uint256 resourceId = resource(false, alice);
 
         uint256 bobResourceId = resource(false, bob);
@@ -823,6 +819,7 @@ contract BulletinTest is Test {
         assertEq(_trade.content, TEST);
         assertEq(_trade.data, BYTES);
 
+        activate(address(bulletin), owner, alice, 10 ether);
         approveExchange(alice, resourceId, exchangeId);
         trade = bulletin.getTrade(false, resourceId, exchangeId);
         assertEq(trade.approved, true);
