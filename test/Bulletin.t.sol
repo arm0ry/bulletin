@@ -636,7 +636,7 @@ contract BulletinTest is Test {
         assertEq(mock.balanceOf(address(bulletin)), 0);
     }
 
-    function test_RejectCreditExchangeForResource_ByVendor(
+    function test_RejectCreditExchangeForResource_ByVendor_Unauthorized(
         uint256 amount
     ) public payable {
         vm.assume(10 ether > amount);
@@ -679,6 +679,7 @@ contract BulletinTest is Test {
         activate(address(bulletin), owner, bob, 10 ether);
         activate(address(bulletin), owner, alice, 10 ether);
 
+        // Bob trades with Alice by spending credits.
         uint256 resourceId = resource(false, alice);
         uint256 exchangeId = setupCreditExchange(bob, resourceId, amount);
 
@@ -699,22 +700,62 @@ contract BulletinTest is Test {
         vm.assume(5 ether > amount);
         vm.assume(amount > 10_000);
 
+        // Bob buys Alice's resource with credits.
         test_ApproveCreditExchangeForResource_ByMember(5 ether);
 
         IBulletin.Credit memory credit = bulletin.getCredit(bob);
         assertEq(credit.limit, 10 ether);
         assertEq(credit.amount, 5 ether);
 
+        // Alice buys Bob's resource with credits.
         uint256 resourceId = resource(false, bob);
         uint256 exchangeId = setupCreditExchange(alice, resourceId, amount);
-
         approveExchange(bob, resourceId, exchangeId);
 
         credit = bulletin.getCredit(bob);
         assertEq(credit.amount, 5 ether + amount);
-
         credit = bulletin.getCredit(alice);
         assertEq(credit.limit, 10 ether);
+        assertEq(credit.amount, 10 ether - amount);
+    }
+
+    function test_ApproveExchangeForResource_AmountGrtrThanLimit(
+        uint256 amount
+    ) public payable {
+        vm.assume(5 ether > amount);
+        vm.assume(amount > 10_000);
+
+        // Bob buys Alice's resource with credits.
+        test_ApproveCreditExchangeForResource_ByMember(5 ether);
+
+        // Alice is penalized with credit limit slashed.
+        // Alice now has more credit than limit allows.
+        vm.prank(owner);
+        Bulletin(address(bulletin)).credit(alice, 2 ether);
+        activate(address(bulletin), owner, charlie, 5 ether);
+
+        // Alice can still buy Bob's resource with credit.
+        // Alice can use any excess credits over credit limit.
+        uint256 resourceId = resource(false, bob);
+        uint256 exchangeId = setupCreditExchange(alice, resourceId, amount);
+        approveExchange(bob, resourceId, exchangeId);
+
+        IBulletin.Credit memory credit = bulletin.getCredit(bob);
+        assertEq(credit.amount, 5 ether + amount);
+        credit = bulletin.getCredit(alice);
+        assertEq(credit.limit, 2 ether);
+        assertEq(credit.amount, 10 ether - amount);
+
+        // But Alice cannot build credit.
+        exchangeId = setupCreditExchange(charlie, 1, amount);
+        credit = bulletin.getCredit(charlie);
+        assertEq(credit.limit, 5 ether);
+        assertEq(credit.amount, 5 ether - amount);
+
+        approveExchange(alice, 1, exchangeId);
+
+        credit = bulletin.getCredit(alice);
+        assertEq(credit.limit, 2 ether);
         assertEq(credit.amount, 10 ether - amount);
     }
 

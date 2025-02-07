@@ -320,13 +320,15 @@ contract Bulletin is OwnableRoles, IBulletin {
     function build(address user, uint256 amount) internal {
         if (amount != 0) {
             Credit storage c = credits[user];
-            uint256 gap = c.limit - c.amount;
-            unchecked {
-                if (c.limit != 0)
-                    (gap > amount) ? c.amount += amount : c.amount += gap;
-                else revert Unauthorized();
-            }
-        }
+            if (c.limit != 0) {
+                if (c.limit >= c.amount) {
+                    uint256 gap = c.limit - c.amount;
+                    unchecked {
+                        (gap > amount) ? c.amount += amount : c.amount += gap;
+                    }
+                } else return;
+            } else revert Unauthorized();
+        } else return;
     }
 
     function deposit(
