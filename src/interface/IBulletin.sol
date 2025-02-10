@@ -12,7 +12,7 @@ interface IBulletin {
      * @dev A struct containing data required for creating a credit line.
      */
     struct Credit {
-        uint256 limit;
+        uint256 limit; // Spending limit
         uint256 amount;
     }
 
@@ -32,6 +32,7 @@ interface IBulletin {
      */
     struct Resource {
         address from;
+        address beneficiary;
         string title;
         string detail;
     }
@@ -63,6 +64,7 @@ interface IBulletin {
 
     error NotOriginalPoster();
     error Approved();
+    error InsufficientCredits();
 
     /* -------------------------------------------------------------------------- */
     /*                     Public / External Write Functions.                     */

@@ -44,16 +44,15 @@ contract Bulletin is OwnableRoles, IBulletin {
     /*                                 Modifiers.                                 */
     /* -------------------------------------------------------------------------- */
 
-    modifier authorized(address user) {
+    modifier isMsgSender(address user) {
         if (user != msg.sender) revert Unauthorized();
-
         _;
     }
 
     modifier isResourceAvailable(bytes32 source) {
         if (source != 0) {
             (address _b, uint256 _r) = decodeAsset(source);
-            Resource memory r = getResource(_r);
+            Resource memory r = IBulletin(_b).getResource(_r);
             if (r.from != msg.sender) revert NotOriginalPoster();
         }
 
@@ -79,27 +78,38 @@ contract Bulletin is OwnableRoles, IBulletin {
         credits[user] = Credit({limit: limit, amount: limit});
     }
 
-    function credit(
+    function adjust(
         address user,
         uint256 newLimit
     ) public onlyOwnerOrRoles(EXTENSIONS) {
         Credit storage c = credits[user];
-        c.limit = newLimit;
+
+        unchecked {
+            if (newLimit > c.limit) {
+                // TODO: test this logic
+                c.amount += newLimit - c.limit;
+                c.limit = newLimit;
+            } else {
+                uint256 gap = c.limit - newLimit;
+                (gap > c.amount) ? c.amount = 0 : c.amount -= gap;
+                c.limit = newLimit;
+            }
+        }
     }
 
     /* -------------------------------------------------------------------------- */
     /*                                   Assets.                                  */
     /* -------------------------------------------------------------------------- */
 
-    function request(Request calldata r) external authorized(r.from) {
-        deposit(r.from, address(this), r.currency, r.drop);
+    function request(Request calldata r) external isMsgSender(r.from) {
+        _deposit(r.from, address(this), r.currency, r.drop);
         unchecked {
             _setRequest(++requestId, r);
         }
     }
 
     function requestByAgent(Request calldata r) external onlyRoles(AGENTS) {
-        deposit(r.from, address(this), r.currency, r.drop);
+        _deposit(r.from, address(this), r.currency, r.drop);
 
         unchecked {
             _setRequest(++requestId, r);
@@ -109,8 +119,8 @@ contract Bulletin is OwnableRoles, IBulletin {
     function respond(
         uint256 _requestId,
         Trade calldata _t
-    ) external isResourceAvailable(_t.resource) authorized(_t.from) {
-        deposit(_t.from, address(this), _t.currency, _t.amount);
+    ) external isResourceAvailable(_t.resource) isMsgSender(_t.from) {
+        _deposit(_t.from, address(this), _t.currency, _t.amount);
 
         uint256 responseId = getTradeIdByUser(true, _requestId, msg.sender);
 
@@ -143,7 +153,7 @@ contract Bulletin is OwnableRoles, IBulletin {
         emit TradeUpdated(true, _requestId, responseId);
     }
 
-    function resource(Resource calldata r) external authorized(r.from) {
+    function resource(Resource calldata r) external isMsgSender(r.from) {
         unchecked {
             _setResource(++resourceId, r);
         }
@@ -160,8 +170,8 @@ contract Bulletin is OwnableRoles, IBulletin {
     function exchange(
         uint256 _resourceId,
         Trade calldata _t
-    ) external isResourceAvailable(_t.resource) authorized(_t.from) {
-        deposit(_t.from, address(this), _t.currency, _t.amount);
+    ) external isResourceAvailable(_t.resource) isMsgSender(_t.from) {
+        _deposit(_t.from, address(this), _t.currency, _t.amount);
 
         uint256 exchangeId = getTradeIdByUser(false, _resourceId, msg.sender);
 
@@ -259,8 +269,8 @@ contract Bulletin is OwnableRoles, IBulletin {
 
             // Accept payment.
             (t.currency != address(0))
-                ? route(t.currency, address(this), msg.sender, t.amount)
-                : build(msg.sender, t.amount);
+                ? route(t.currency, address(this), r.beneficiary, t.amount)
+                : build(r.beneficiary, t.amount);
 
             emit TradeUpdated(false, _resourceId, exchangeId);
         } else revert Approved();
@@ -301,7 +311,7 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     function _setResource(uint256 _resourceId, Resource calldata r) internal {
         resources[_resourceId] = r;
-        emit ResourceUpdated(resourceId);
+        emit ResourceUpdated(_resourceId);
     }
 
     /// @dev Helper function to route currency.
@@ -318,17 +328,9 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     /// @dev Helper function to build credit for user.
     function build(address user, uint256 amount) internal {
-        if (amount != 0) {
-            Credit storage c = credits[user];
-            if (c.limit != 0) {
-                if (c.limit >= c.amount) {
-                    uint256 gap = c.limit - c.amount;
-                    unchecked {
-                        (gap > amount) ? c.amount += amount : c.amount += gap;
-                    }
-                } else return;
-            } else revert Unauthorized();
-        } else return;
+        unchecked {
+            if (amount != 0) credits[user].amount += amount;
+        }
     }
 
     function deposit(
@@ -336,12 +338,20 @@ contract Bulletin is OwnableRoles, IBulletin {
         address to,
         address currency,
         uint256 amount
-    ) internal {
-        Credit storage c = credits[from];
+    ) external onlyRoles(EXTENSIONS) {
+        _deposit(from, to, currency, amount);
+    }
 
+    function _deposit(
+        address from,
+        address to,
+        address currency,
+        uint256 amount
+    ) internal {
         if (currency == address(0) && amount != 0) {
-            if (c.limit != 0) c.amount -= amount;
-            else revert Unauthorized();
+            Credit storage c = credits[from];
+            if (amount > c.amount) revert InsufficientCredits();
+            else c.amount -= amount;
         }
 
         if (currency != address(0) && amount != 0)
@@ -374,11 +384,11 @@ contract Bulletin is OwnableRoles, IBulletin {
     /*                                 Public Get.                                */
     /* -------------------------------------------------------------------------- */
 
-    function getRequest(uint256 id) public view returns (Request memory) {
+    function getRequest(uint256 id) external view returns (Request memory) {
         return requests[id];
     }
 
-    function getResource(uint256 id) public view returns (Resource memory) {
+    function getResource(uint256 id) external view returns (Resource memory) {
         return resources[id];
     }
 
@@ -386,7 +396,7 @@ contract Bulletin is OwnableRoles, IBulletin {
         bool isResponse,
         uint256 subjectId,
         uint256 tradeId
-    ) public view returns (Trade memory) {
+    ) external view returns (Trade memory) {
         return
             (isResponse)
                 ? responsesPerRequest[subjectId][tradeId]

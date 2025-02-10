@@ -178,6 +178,7 @@ contract BulletinTest is Test {
     ) public payable returns (uint256 id) {
         IBulletin.Resource memory r = IBulletin.Resource({
             from: user,
+            beneficiary: user,
             title: TEST,
             detail: TEST
         });
@@ -636,7 +637,7 @@ contract BulletinTest is Test {
         assertEq(mock.balanceOf(address(bulletin)), 0);
     }
 
-    function test_RejectCreditExchangeForResource_ByVendor_Unauthorized(
+    function test_IgnoreCreditExchangeForResource_ByNonMember(
         uint256 amount
     ) public payable {
         vm.assume(10 ether > amount);
@@ -664,10 +665,12 @@ contract BulletinTest is Test {
         assertEq(credit.limit, 10 ether);
         assertEq(credit.amount, 10 ether - amount);
 
-        // Approve exchange.
-        vm.expectRevert(Ownable.Unauthorized.selector);
-        vm.prank(alice);
-        bulletin.approveExchange(resourceId, exchangeId);
+        approveExchange(alice, resourceId, exchangeId);
+
+        // Non-members may also earn credits.
+        credit = bulletin.getCredit(alice);
+        assertEq(credit.limit, 0);
+        assertEq(credit.amount, amount);
     }
 
     function test_ApproveCreditExchangeForResource_ByMember(
@@ -691,7 +694,7 @@ contract BulletinTest is Test {
 
         credit = bulletin.getCredit(alice);
         assertEq(credit.limit, 10 ether);
-        assertEq(credit.amount, 10 ether);
+        assertEq(credit.amount, 10 ether + amount);
     }
 
     function test_ApproveExchangeForResource_BuildCredit(
@@ -716,7 +719,7 @@ contract BulletinTest is Test {
         assertEq(credit.amount, 5 ether + amount);
         credit = bulletin.getCredit(alice);
         assertEq(credit.limit, 10 ether);
-        assertEq(credit.amount, 10 ether - amount);
+        assertEq(credit.amount, 15 ether - amount);
     }
 
     function test_ApproveExchangeForResource_AmountGrtrThanLimit(
@@ -731,22 +734,26 @@ contract BulletinTest is Test {
         // Alice is penalized with credit limit slashed.
         // Alice now has more credit than limit allows.
         vm.prank(owner);
-        Bulletin(address(bulletin)).credit(alice, 2 ether);
+        Bulletin(address(bulletin)).adjust(alice, 2 ether);
+
+        // When penalized, credit amount normalizes/decreases by the amount of reduction in credit limit.
+        IBulletin.Credit memory credit = bulletin.getCredit(alice);
+        assertEq(credit.limit, 2 ether);
+        assertEq(credit.amount, 7 ether);
+
         activate(address(bulletin), owner, charlie, 5 ether);
 
-        // Alice can still buy Bob's resource with credit.
-        // Alice can use any excess credits over credit limit.
+        // Alice can still use credits to buy Bob's resource.
         uint256 resourceId = resource(false, bob);
         uint256 exchangeId = setupCreditExchange(alice, resourceId, amount);
         approveExchange(bob, resourceId, exchangeId);
 
-        IBulletin.Credit memory credit = bulletin.getCredit(bob);
+        credit = bulletin.getCredit(bob);
         assertEq(credit.amount, 5 ether + amount);
         credit = bulletin.getCredit(alice);
         assertEq(credit.limit, 2 ether);
-        assertEq(credit.amount, 10 ether - amount);
+        assertEq(credit.amount, 7 ether - amount);
 
-        // But Alice cannot build credit.
         exchangeId = setupCreditExchange(charlie, 1, amount);
         credit = bulletin.getCredit(charlie);
         assertEq(credit.limit, 5 ether);
@@ -756,7 +763,7 @@ contract BulletinTest is Test {
 
         credit = bulletin.getCredit(alice);
         assertEq(credit.limit, 2 ether);
-        assertEq(credit.amount, 10 ether - amount);
+        assertEq(credit.amount, 7 ether);
     }
 
     function test_ExchangeForResource_ApproveCurrency(
