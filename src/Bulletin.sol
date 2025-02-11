@@ -240,6 +240,7 @@ contract Bulletin is OwnableRoles, IBulletin {
         if (r.from != msg.sender) revert NotOriginalPoster();
 
         Trade storage t = responsesPerRequest[_requestId][responseId];
+        if (t.from == address(0)) revert InvalidTrade();
         if (!t.approved) {
             // Aprove trade.
             t.approved = true;
@@ -261,6 +262,7 @@ contract Bulletin is OwnableRoles, IBulletin {
         if (r.from != msg.sender) revert NotOriginalPoster();
 
         Trade storage t = exchangesPerResource[_resourceId][exchangeId];
+        if (t.from == address(0)) revert InvalidTrade();
         if (!t.approved) {
             // Aprove trade.
             t.approved = true;
