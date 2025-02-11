@@ -44,11 +44,6 @@ contract Bulletin is OwnableRoles, IBulletin {
     /*                                 Modifiers.                                 */
     /* -------------------------------------------------------------------------- */
 
-    modifier isMsgSender(address user) {
-        if (user != msg.sender) revert Unauthorized();
-        _;
-    }
-
     modifier isResourceAvailable(bytes32 source) {
         if (source != 0) {
             (address _b, uint256 _r) = decodeAsset(source);
@@ -101,8 +96,9 @@ contract Bulletin is OwnableRoles, IBulletin {
     /*                                   Assets.                                  */
     /* -------------------------------------------------------------------------- */
 
-    function request(Request calldata r) external isMsgSender(r.from) {
-        _deposit(r.from, address(this), r.currency, r.drop);
+    function request(Request calldata r) external {
+        if (r.from != msg.sender) revert Unauthorized();
+        _deposit(msg.sender, address(this), r.currency, r.drop);
         unchecked {
             _setRequest(++requestId, r);
         }
@@ -119,8 +115,8 @@ contract Bulletin is OwnableRoles, IBulletin {
     function respond(
         uint256 _requestId,
         Trade calldata _t
-    ) external isResourceAvailable(_t.resource) isMsgSender(_t.from) {
-        _deposit(_t.from, address(this), _t.currency, _t.amount);
+    ) external isResourceAvailable(_t.resource) {
+        _deposit(msg.sender, address(this), _t.currency, _t.amount);
 
         uint256 responseId = getTradeIdByUser(true, _requestId, msg.sender);
 
@@ -153,7 +149,9 @@ contract Bulletin is OwnableRoles, IBulletin {
         emit TradeUpdated(true, _requestId, responseId);
     }
 
-    function resource(Resource calldata r) external isMsgSender(r.from) {
+    function resource(Resource calldata r) external {
+        if (r.from != msg.sender) revert Unauthorized();
+
         unchecked {
             _setResource(++resourceId, r);
         }
@@ -170,8 +168,8 @@ contract Bulletin is OwnableRoles, IBulletin {
     function exchange(
         uint256 _resourceId,
         Trade calldata _t
-    ) external isResourceAvailable(_t.resource) isMsgSender(_t.from) {
-        _deposit(_t.from, address(this), _t.currency, _t.amount);
+    ) external isResourceAvailable(_t.resource) {
+        _deposit(msg.sender, address(this), _t.currency, _t.amount);
 
         uint256 exchangeId = getTradeIdByUser(false, _resourceId, msg.sender);
 
@@ -350,8 +348,7 @@ contract Bulletin is OwnableRoles, IBulletin {
     ) internal {
         if (currency == address(0) && amount != 0) {
             Credit storage c = credits[from];
-            if (amount > c.amount) revert InsufficientCredits();
-            else c.amount -= amount;
+            c.amount -= amount;
         }
 
         if (currency != address(0) && amount != 0)

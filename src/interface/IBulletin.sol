@@ -64,7 +64,6 @@ interface IBulletin {
 
     error NotOriginalPoster();
     error Approved();
-    error InsufficientCredits();
 
     /* -------------------------------------------------------------------------- */
     /*                     Public / External Write Functions.                     */
