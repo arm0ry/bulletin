@@ -70,9 +70,9 @@ interface IBulletin {
     /*                     Public / External Write Functions.                     */
     /* -------------------------------------------------------------------------- */
 
-    function request(Request calldata r) external;
+    function request(uint256 requestId, Request calldata r) external;
     function respond(uint256 requestId, Trade calldata t) external;
-    function resource(Resource calldata r) external;
+    function resource(uint256 resourceId, Resource calldata r) external;
     function exchange(uint256 resourceId, Trade calldata t) external;
 
     function withdrawRequest(uint256 requestId) external;

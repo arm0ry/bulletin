@@ -96,11 +96,10 @@ contract Bulletin is OwnableRoles, IBulletin {
     /*                                   Assets.                                  */
     /* -------------------------------------------------------------------------- */
 
-    function request(Request calldata r) external {
-        if (r.from != msg.sender) revert Unauthorized();
-        _deposit(msg.sender, address(this), r.currency, r.drop);
+    function request(uint256 id, Request calldata r) external {
+        _deposit(r.from, address(this), r.currency, r.drop);
         unchecked {
-            _setRequest(++requestId, r);
+            _setRequest(id, r);
         }
     }
 
@@ -108,7 +107,7 @@ contract Bulletin is OwnableRoles, IBulletin {
         _deposit(r.from, address(this), r.currency, r.drop);
 
         unchecked {
-            _setRequest(++requestId, r);
+            _setRequest(0, r);
         }
     }
 
@@ -149,17 +148,13 @@ contract Bulletin is OwnableRoles, IBulletin {
         emit TradeUpdated(true, _requestId, responseId);
     }
 
-    function resource(Resource calldata r) external {
-        if (r.from != msg.sender) revert Unauthorized();
-
-        unchecked {
-            _setResource(++resourceId, r);
-        }
+    function resource(uint256 id, Resource calldata r) external {
+        _setResource(id, r);
     }
 
     function resourceByAgent(Resource calldata r) external onlyRoles(AGENTS) {
         unchecked {
-            _setResource(++resourceId, r);
+            _setResource(0, r);
         }
     }
 
@@ -304,14 +299,37 @@ contract Bulletin is OwnableRoles, IBulletin {
     /*                                  Internal.                                 */
     /* -------------------------------------------------------------------------- */
 
-    function _setRequest(uint256 _requestId, Request calldata r) internal {
-        requests[_requestId] = r;
-        emit RequestUpdated(_requestId);
+    function _setRequest(uint256 id, Request calldata _r) internal {
+        if (id != 0) {
+            Request storage r = requests[id];
+            if (r.from != msg.sender) revert Unauthorized();
+            (bytes(_r.title).length > 0) ? r.title = _r.title : r.title;
+            (bytes(_r.detail).length > 0) ? r.detail = _r.detail : r.detail;
+        } else {
+            if (_r.from != msg.sender) revert Unauthorized();
+            unchecked {
+                requests[id = ++requestId] = _r;
+            }
+        }
+        emit RequestUpdated(id);
     }
 
-    function _setResource(uint256 _resourceId, Resource calldata r) internal {
-        resources[_resourceId] = r;
-        emit ResourceUpdated(_resourceId);
+    function _setResource(uint256 id, Resource calldata _r) internal {
+        if (id != 0) {
+            Resource storage r = resources[id];
+            if (r.from != msg.sender) revert Unauthorized();
+            (_r.beneficiary != address(0))
+                ? r.beneficiary = _r.beneficiary
+                : r.beneficiary;
+            (bytes(_r.title).length > 0) ? r.title = _r.title : r.title;
+            (bytes(_r.detail).length > 0) ? r.detail = _r.detail : r.detail;
+        } else {
+            if (_r.from != msg.sender) revert Unauthorized();
+            unchecked {
+                resources[id = ++resourceId] = _r;
+            }
+        }
+        emit ResourceUpdated(id);
     }
 
     /// @dev Helper function to route currency.

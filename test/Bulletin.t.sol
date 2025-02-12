@@ -123,7 +123,7 @@ contract BulletinTest is Test {
         });
 
         vm.prank((isOwner) ? owner : user);
-        bulletin.request(a);
+        bulletin.request(0, a);
         id = bulletin.requestId();
     }
 
@@ -143,7 +143,7 @@ contract BulletinTest is Test {
         mockApprove((isOwner) ? owner : user, address(bulletin), amount);
 
         vm.prank((isOwner) ? owner : user);
-        bulletin.request(a);
+        bulletin.request(0, a);
         id = bulletin.requestId();
     }
 
@@ -160,7 +160,7 @@ contract BulletinTest is Test {
         });
 
         vm.prank(user);
-        bulletin.request(a);
+        bulletin.request(0, a);
         id = bulletin.requestId();
     }
 
@@ -184,8 +184,20 @@ contract BulletinTest is Test {
         });
 
         vm.prank((isOwner) ? owner : user);
-        bulletin.resource(r);
+        bulletin.resource(0, r);
         id = bulletin.resourceId();
+    }
+
+    function updateResource(address op, uint256 resourceId) public payable {
+        vm.warp(block.timestamp + 10);
+        IBulletin.Resource memory r = IBulletin.Resource({
+            from: op,
+            beneficiary: charlie,
+            title: TEST2,
+            detail: TEST2
+        });
+        vm.prank(op);
+        bulletin.resource(resourceId, r);
     }
 
     function withdrawResource(address op, uint256 resourceId) public payable {
@@ -571,12 +583,24 @@ contract BulletinTest is Test {
         assertEq(_resource.detail, TEST);
     }
 
+    function test_Resource_Update() public payable {
+        uint256 resourceId = resource(true, owner);
+        updateResource(owner, resourceId);
+        IBulletin.Resource memory _resource = bulletin.getResource(resourceId);
+
+        assertEq(_resource.from, owner);
+        assertEq(_resource.beneficiary, charlie);
+        assertEq(_resource.title, TEST2);
+        assertEq(_resource.detail, TEST2);
+    }
+
     function test_Resource_Withdraw() public payable {
         uint256 resourceId = resource(true, owner);
         withdrawResource(owner, resourceId);
         IBulletin.Resource memory _resource = bulletin.getResource(resourceId);
 
         assertEq(_resource.from, address(0));
+        assertEq(_resource.beneficiary, address(0));
         assertEq(_resource.title, "");
         assertEq(_resource.detail, "");
     }
