@@ -164,6 +164,19 @@ contract BulletinTest is Test {
         id = bulletin.requestId();
     }
 
+    function updateRequest(address op, uint256 requestId) public payable {
+        vm.warp(block.timestamp + 10);
+        IBulletin.Request memory r = IBulletin.Request({
+            from: op,
+            title: TEST2,
+            detail: TEST2,
+            currency: address(2),
+            drop: 20 ether
+        });
+        vm.prank(op);
+        bulletin.request(requestId, r);
+    }
+
     function withdrawRequest(address op, uint256 requestId) public payable {
         vm.warp(block.timestamp + 10);
         vm.prank(op);
@@ -505,6 +518,19 @@ contract BulletinTest is Test {
         assertEq(_request.from, address(0));
         assertEq(_request.title, "");
         assertEq(_request.detail, "");
+        assertEq(_request.currency, address(0));
+        assertEq(_request.drop, 0);
+    }
+
+    function test_Request_Update() public payable {
+        uint256 requestId = request(true, owner);
+        updateRequest(owner, requestId);
+
+        IBulletin.Request memory _request = bulletin.getRequest(requestId);
+
+        assertEq(_request.from, owner);
+        assertEq(_request.title, TEST2);
+        assertEq(_request.detail, TEST2);
         assertEq(_request.currency, address(0));
         assertEq(_request.drop, 0);
     }

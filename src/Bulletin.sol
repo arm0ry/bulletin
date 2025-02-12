@@ -97,18 +97,11 @@ contract Bulletin is OwnableRoles, IBulletin {
     /* -------------------------------------------------------------------------- */
 
     function request(uint256 id, Request calldata r) external {
-        _deposit(r.from, address(this), r.currency, r.drop);
-        unchecked {
-            _setRequest(id, r);
-        }
+        _setRequest(id, r);
     }
 
     function requestByAgent(Request calldata r) external onlyRoles(AGENTS) {
-        _deposit(r.from, address(this), r.currency, r.drop);
-
-        unchecked {
-            _setRequest(0, r);
-        }
+        _setRequest(0, r);
     }
 
     function respond(
@@ -307,6 +300,8 @@ contract Bulletin is OwnableRoles, IBulletin {
             (bytes(_r.detail).length > 0) ? r.detail = _r.detail : r.detail;
         } else {
             if (_r.from != msg.sender) revert Unauthorized();
+            _deposit(_r.from, address(this), _r.currency, _r.drop);
+
             unchecked {
                 requests[id = ++requestId] = _r;
             }
