@@ -191,7 +191,6 @@ contract BulletinTest is Test {
     ) public payable returns (uint256 id) {
         IBulletin.Resource memory r = IBulletin.Resource({
             from: user,
-            beneficiary: user,
             title: TEST,
             detail: TEST
         });
@@ -201,11 +200,14 @@ contract BulletinTest is Test {
         id = bulletin.resourceId();
     }
 
-    function updateResource(address op, uint256 resourceId) public payable {
+    function updateResource(
+        address op,
+        address newOwner,
+        uint256 resourceId
+    ) public payable {
         vm.warp(block.timestamp + 10);
         IBulletin.Resource memory r = IBulletin.Resource({
-            from: op,
-            beneficiary: charlie,
+            from: newOwner,
             title: TEST2,
             detail: TEST2
         });
@@ -238,7 +240,7 @@ contract BulletinTest is Test {
             data: BYTES
         });
         vm.prank(user);
-        bulletin.respond(requestId, trade);
+        bulletin.trade(IBulletin.TradeType.RESPONSE, requestId, trade);
         id = bulletin.responseIdsPerRequest(requestId);
     }
 
@@ -257,7 +259,7 @@ contract BulletinTest is Test {
             data: BYTES
         });
         vm.prank(user);
-        bulletin.respond(requestId, trade);
+        bulletin.trade(IBulletin.TradeType.RESPONSE, requestId, trade);
         id = bulletin.responseIdsPerRequest(requestId);
     }
 
@@ -276,7 +278,7 @@ contract BulletinTest is Test {
             data: BYTES2
         });
         vm.prank(user);
-        bulletin.respond(requestId, trade);
+        bulletin.trade(IBulletin.TradeType.RESPONSE, requestId, trade);
     }
 
     function setupResourceExchange(
@@ -298,7 +300,7 @@ contract BulletinTest is Test {
             data: BYTES
         });
         vm.prank(user);
-        bulletin.exchange(resourceId, trade);
+        bulletin.trade(IBulletin.TradeType.EXCHANGE, resourceId, trade);
         id = bulletin.exchangeIdsPerResource(resourceId);
     }
 
@@ -321,7 +323,7 @@ contract BulletinTest is Test {
             data: BYTES2
         });
         vm.prank(user);
-        bulletin.exchange(resourceId, trade);
+        bulletin.trade(IBulletin.TradeType.EXCHANGE, resourceId, trade);
         id = bulletin.exchangeIdsPerResource(resourceId);
     }
 
@@ -340,7 +342,7 @@ contract BulletinTest is Test {
             data: BYTES
         });
         vm.prank(user);
-        bulletin.exchange(resourceId, trade);
+        bulletin.trade(IBulletin.TradeType.EXCHANGE, resourceId, trade);
         id = bulletin.exchangeIdsPerResource(resourceId);
     }
 
@@ -364,7 +366,7 @@ contract BulletinTest is Test {
             data: BYTES
         });
         vm.prank(user);
-        bulletin.exchange(resourceId, trade);
+        bulletin.trade(IBulletin.TradeType.EXCHANGE, resourceId, trade);
         id = bulletin.exchangeIdsPerResource(resourceId);
     }
 
@@ -385,7 +387,7 @@ contract BulletinTest is Test {
             data: BYTES2
         });
         vm.prank(user);
-        bulletin.exchange(resourceId, trade);
+        bulletin.trade(IBulletin.TradeType.EXCHANGE, resourceId, trade);
     }
 
     /// @notice Trades
@@ -406,7 +408,11 @@ contract BulletinTest is Test {
         uint256 responseId
     ) public payable {
         vm.prank(op);
-        bulletin.withdrawTrade(true, requestId, responseId);
+        bulletin.withdrawTrade(
+            IBulletin.TradeType.RESPONSE,
+            requestId,
+            responseId
+        );
     }
 
     function approveExchange(
@@ -424,7 +430,11 @@ contract BulletinTest is Test {
         uint256 exchangeId
     ) public payable {
         vm.prank(op);
-        bulletin.withdrawTrade(false, resourceId, exchangeId);
+        bulletin.withdrawTrade(
+            IBulletin.TradeType.EXCHANGE,
+            resourceId,
+            exchangeId
+        );
     }
 
     /// -----------------------------------------------------------------------
@@ -611,11 +621,10 @@ contract BulletinTest is Test {
 
     function test_Resource_Update() public payable {
         uint256 resourceId = resource(true, owner);
-        updateResource(owner, resourceId);
+        updateResource(owner, charlie, resourceId);
         IBulletin.Resource memory _resource = bulletin.getResource(resourceId);
 
-        assertEq(_resource.from, owner);
-        assertEq(_resource.beneficiary, charlie);
+        assertEq(_resource.from, charlie);
         assertEq(_resource.title, TEST2);
         assertEq(_resource.detail, TEST2);
     }
@@ -626,7 +635,6 @@ contract BulletinTest is Test {
         IBulletin.Resource memory _resource = bulletin.getResource(resourceId);
 
         assertEq(_resource.from, address(0));
-        assertEq(_resource.beneficiary, address(0));
         assertEq(_resource.title, "");
         assertEq(_resource.detail, "");
     }
@@ -660,7 +668,7 @@ contract BulletinTest is Test {
         );
 
         IBulletin.Trade memory trade = bulletin.getTrade(
-            false,
+            IBulletin.TradeType.EXCHANGE,
             resourceId,
             exchangeId
         );
@@ -678,7 +686,11 @@ contract BulletinTest is Test {
         approveExchange(alice, resourceId, exchangeId);
 
         // Vendor receive currency.
-        trade = bulletin.getTrade(false, resourceId, exchangeId);
+        trade = bulletin.getTrade(
+            IBulletin.TradeType.EXCHANGE,
+            resourceId,
+            exchangeId
+        );
         assertEq(trade.approved, true);
         assertEq(trade.from, bob);
         assertEq(trade.currency, address(mock));
@@ -699,7 +711,7 @@ contract BulletinTest is Test {
         uint256 exchangeId = setupCreditExchange(bob, resourceId, amount);
 
         IBulletin.Trade memory trade = bulletin.getTrade(
-            false,
+            IBulletin.TradeType.EXCHANGE,
             resourceId,
             exchangeId
         );
@@ -833,7 +845,7 @@ contract BulletinTest is Test {
         );
 
         IBulletin.Trade memory trade = bulletin.getTrade(
-            false,
+            IBulletin.TradeType.EXCHANGE,
             resourceId,
             exchangeId
         );
@@ -847,9 +859,13 @@ contract BulletinTest is Test {
         assertEq(mock.balanceOf(bob), 0);
         assertEq(mock.balanceOf(address(bulletin)), amount);
 
-        uint256 id = bulletin.getTradeIdByUser(false, resourceId, bob);
+        uint256 id = bulletin.getTradeIdByUser(
+            IBulletin.TradeType.EXCHANGE,
+            resourceId,
+            bob
+        );
         IBulletin.Trade memory _trade = bulletin.getTrade(
-            false,
+            IBulletin.TradeType.EXCHANGE,
             resourceId,
             id
         );
@@ -863,7 +879,11 @@ contract BulletinTest is Test {
         assertEq(_trade.data, BYTES);
 
         approveExchange(alice, resourceId, exchangeId);
-        trade = bulletin.getTrade(false, resourceId, exchangeId);
+        trade = bulletin.getTrade(
+            IBulletin.TradeType.EXCHANGE,
+            resourceId,
+            exchangeId
+        );
         assertEq(trade.approved, true);
         assertEq(trade.from, bob);
         assertEq(trade.currency, address(mock));
@@ -884,7 +904,7 @@ contract BulletinTest is Test {
         );
 
         IBulletin.Trade memory trade = bulletin.getTrade(
-            false,
+            IBulletin.TradeType.EXCHANGE,
             resourceId,
             exchangeId
         );
@@ -899,9 +919,13 @@ contract BulletinTest is Test {
         assertEq(trade.content, TEST);
         assertEq(trade.data, BYTES);
 
-        uint256 id = bulletin.getTradeIdByUser(false, resourceId, bob);
+        uint256 id = bulletin.getTradeIdByUser(
+            IBulletin.TradeType.EXCHANGE,
+            resourceId,
+            bob
+        );
         IBulletin.Trade memory _trade = bulletin.getTrade(
-            false,
+            IBulletin.TradeType.EXCHANGE,
             resourceId,
             id
         );
@@ -919,7 +943,11 @@ contract BulletinTest is Test {
 
         activate(address(bulletin), owner, alice, 10 ether);
         approveExchange(alice, resourceId, exchangeId);
-        trade = bulletin.getTrade(false, resourceId, exchangeId);
+        trade = bulletin.getTrade(
+            IBulletin.TradeType.EXCHANGE,
+            resourceId,
+            exchangeId
+        );
         assertEq(trade.approved, true);
         assertEq(trade.from, bob);
         assertEq(trade.currency, address(0));
@@ -940,7 +968,7 @@ contract BulletinTest is Test {
         );
 
         IBulletin.Trade memory trade = bulletin.getTrade(
-            false,
+            IBulletin.TradeType.EXCHANGE,
             resourceId,
             exchangeId
         );
@@ -956,10 +984,18 @@ contract BulletinTest is Test {
 
         withdrawExchange(bob, resourceId, exchangeId);
 
-        uint256 id = bulletin.getTradeIdByUser(false, resourceId, bob);
+        uint256 id = bulletin.getTradeIdByUser(
+            IBulletin.TradeType.EXCHANGE,
+            resourceId,
+            bob
+        );
         assertEq(id, 0);
 
-        trade = bulletin.getTrade(false, resourceId, exchangeId);
+        trade = bulletin.getTrade(
+            IBulletin.TradeType.EXCHANGE,
+            resourceId,
+            exchangeId
+        );
         assertEq(trade.approved, false);
         assertEq(trade.from, address(0));
         assertEq(trade.currency, address(0));
@@ -992,7 +1028,7 @@ contract BulletinTest is Test {
             resourceId
         );
         IBulletin.Trade memory trade = bulletin.getTrade(
-            true,
+            IBulletin.TradeType.RESPONSE,
             requestId,
             tradeId
         );
@@ -1000,7 +1036,11 @@ contract BulletinTest is Test {
 
         // approve trade
         approveResponse(owner, requestId, tradeId, 0);
-        trade = bulletin.getTrade(true, requestId, tradeId);
+        trade = bulletin.getTrade(
+            IBulletin.TradeType.RESPONSE,
+            requestId,
+            tradeId
+        );
 
         assertEq(trade.approved, !approved);
     }
@@ -1031,11 +1071,15 @@ contract BulletinTest is Test {
 
         withdrawResponse(alice, requestId, responseId);
 
-        uint256 id = bulletin.getTradeIdByUser(true, requestId, alice);
+        uint256 id = bulletin.getTradeIdByUser(
+            IBulletin.TradeType.RESPONSE,
+            requestId,
+            alice
+        );
         assertEq(id, 0);
 
         IBulletin.Trade memory trade = bulletin.getTrade(
-            true,
+            IBulletin.TradeType.RESPONSE,
             requestId,
             responseId
         );
@@ -1079,8 +1123,16 @@ contract BulletinTest is Test {
         assertEq(MockERC20(mock).balanceOf(address(bulletin)), 0);
         assertEq(MockERC20(mock).balanceOf(alice), amount);
 
-        uint256 id = bulletin.getTradeIdByUser(true, requestId, alice);
-        IBulletin.Trade memory _trade = bulletin.getTrade(true, requestId, id);
+        uint256 id = bulletin.getTradeIdByUser(
+            IBulletin.TradeType.RESPONSE,
+            requestId,
+            alice
+        );
+        IBulletin.Trade memory _trade = bulletin.getTrade(
+            IBulletin.TradeType.RESPONSE,
+            requestId,
+            id
+        );
 
         assertEq(id, responseId);
         assertEq(_trade.approved, true);
@@ -1115,8 +1167,16 @@ contract BulletinTest is Test {
         // approve first trade
         approveResponse(owner, requestId, responseId, (amount * 20) / 100);
 
-        uint256 id = bulletin.getTradeIdByUser(true, requestId, alice);
-        IBulletin.Trade memory _trade = bulletin.getTrade(true, requestId, id);
+        uint256 id = bulletin.getTradeIdByUser(
+            IBulletin.TradeType.RESPONSE,
+            requestId,
+            alice
+        );
+        IBulletin.Trade memory _trade = bulletin.getTrade(
+            IBulletin.TradeType.RESPONSE,
+            requestId,
+            id
+        );
         assertEq(id, responseId);
         assertEq(_trade.approved, true);
         assertEq(_trade.from, alice);
@@ -1139,8 +1199,12 @@ contract BulletinTest is Test {
         assertEq(MockERC20(mock).balanceOf(alice), (amount * 20) / 100);
         assertEq(MockERC20(mock).balanceOf(bob), (amount * 20) / 100);
 
-        id = bulletin.getTradeIdByUser(true, requestId, bob);
-        _trade = bulletin.getTrade(true, requestId, id);
+        id = bulletin.getTradeIdByUser(
+            IBulletin.TradeType.RESPONSE,
+            requestId,
+            bob
+        );
+        _trade = bulletin.getTrade(IBulletin.TradeType.RESPONSE, requestId, id);
         assertEq(id, responseId);
         assertEq(_trade.approved, true);
         assertEq(_trade.from, bob);

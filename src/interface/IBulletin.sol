@@ -4,6 +4,11 @@ pragma solidity ^0.8.17;
 /// @dev Contract for Bulletin.
 /// Bulletin is a board of on-chain asks and offerings.
 interface IBulletin {
+    enum TradeType {
+        RESPONSE, // responses to requests
+        EXCHANGE // exchanges for resources
+    }
+
     /* -------------------------------------------------------------------------- */
     /*                                  Structs.                                  */
     /* -------------------------------------------------------------------------- */
@@ -32,7 +37,6 @@ interface IBulletin {
      */
     struct Resource {
         address from;
-        address beneficiary;
         string title;
         string detail;
     }
@@ -56,7 +60,7 @@ interface IBulletin {
 
     event RequestUpdated(uint256 requestId);
     event ResourceUpdated(uint256 resourceId);
-    event TradeUpdated(bool isResponse, uint256 subjectId, uint256 tradeId);
+    event TradeUpdated(TradeType tradeType, uint256 subjectId, uint256 tradeId);
 
     /* -------------------------------------------------------------------------- */
     /*                                   Errors.                                  */
@@ -71,17 +75,20 @@ interface IBulletin {
     /* -------------------------------------------------------------------------- */
 
     function request(uint256 requestId, Request calldata r) external;
-    function respond(uint256 requestId, Trade calldata t) external;
     function resource(uint256 resourceId, Resource calldata r) external;
-    function exchange(uint256 resourceId, Trade calldata t) external;
+    function trade(
+        TradeType tradeType,
+        uint256 resourceId,
+        Trade calldata t
+    ) external;
 
     function withdrawRequest(uint256 requestId) external;
     function withdrawResource(uint256 resourceId) external;
 
     function withdrawTrade(
-        bool isResponse,
-        uint256 requestId,
-        uint256 responseId
+        TradeType tradeType,
+        uint256 subjectId,
+        uint256 tradeId
     ) external;
 
     function approveResponse(
@@ -100,9 +107,9 @@ interface IBulletin {
     function getResource(uint256 id) external view returns (Resource memory r);
 
     function getTrade(
-        bool isResponse,
-        uint256 requestId,
-        uint256 responseId
+        TradeType tradeType,
+        uint256 subjectId,
+        uint256 tradeId
     ) external view returns (Trade memory);
 
     function getCredit(address user) external view returns (Credit memory c);

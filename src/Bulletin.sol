@@ -96,98 +96,93 @@ contract Bulletin is OwnableRoles, IBulletin {
     /*                                   Assets.                                  */
     /* -------------------------------------------------------------------------- */
 
-    function request(uint256 id, Request calldata r) external {
-        _setRequest(id, r);
+    function request(uint256 id, Request calldata _r) external {
+        if (id != 0) {
+            Request storage r = requests[id];
+            if (r.from != msg.sender && rolesOf(msg.sender) != AGENTS)
+                revert Unauthorized();
+            (bytes(_r.title).length > 0) ? r.title = _r.title : r.title;
+            (bytes(_r.detail).length > 0) ? r.detail = _r.detail : r.detail;
+        } else {
+            if (_r.from != msg.sender && rolesOf(msg.sender) != AGENTS)
+                revert Unauthorized();
+            _deposit(_r.from, address(this), _r.currency, _r.drop);
+
+            unchecked {
+                requests[id = ++requestId] = _r;
+            }
+        }
+        emit RequestUpdated(id);
     }
 
-    function requestByAgent(Request calldata r) external onlyRoles(AGENTS) {
-        _setRequest(0, r);
+    function resource(uint256 id, Resource calldata _r) external {
+        if (id != 0) {
+            Resource storage r = resources[id];
+            if (r.from != msg.sender && rolesOf(msg.sender) != AGENTS)
+                revert Unauthorized();
+
+            (_r.from != address(0)) ? r.from = _r.from : r.from;
+            (bytes(_r.title).length > 0) ? r.title = _r.title : r.title;
+            (bytes(_r.detail).length > 0) ? r.detail = _r.detail : r.detail;
+        } else {
+            if (_r.from != msg.sender && rolesOf(msg.sender) != AGENTS)
+                revert Unauthorized();
+            unchecked {
+                resources[id = ++resourceId] = _r;
+            }
+        }
+        emit ResourceUpdated(id);
     }
 
-    function respond(
-        uint256 _requestId,
+    function trade(
+        TradeType tradeType,
+        uint256 subjectId,
         Trade calldata _t
     ) external isResourceAvailable(_t.resource) {
-        _deposit(msg.sender, address(this), _t.currency, _t.amount);
+        if (_t.from != msg.sender && rolesOf(msg.sender) != AGENTS)
+            revert Unauthorized();
+        _deposit(_t.from, address(this), _t.currency, _t.amount);
 
-        uint256 responseId = getTradeIdByUser(true, _requestId, msg.sender);
+        uint256 id = getTradeIdByUser(tradeType, subjectId, _t.from);
 
         Trade storage t;
-        if (responseId == 0) {
-            unchecked {
-                responseId = ++responseIdsPerRequest[_requestId];
-            }
-
-            t = responsesPerRequest[_requestId][responseId];
-
-            // Store trade.
-            t.from = msg.sender;
-            (_t.resource > 0) ? t.resource = _t.resource : t.resource;
-            (_t.currency != address(0)) ? t.currency = _t.currency : t.currency;
-            (_t.amount > 0) ? t.amount = _t.amount : t.amount;
-            (bytes(_t.content).length > 0) ? t.content = _t.content : t.content;
-            (bytes(_t.data).length > 0) ? t.data = _t.data : t.data;
-        } else {
-            t = responsesPerRequest[_requestId][responseId];
-            if (t.approved) revert Approved();
-
-            // Update payment if different. Other data stay intact.
-            if (t.currency == address(0) && t.amount != 0)
-                t.amount += _t.amount;
-            if (t.amount != 0)
-                route(t.currency, address(this), t.from, t.amount);
-        }
-
-        emit TradeUpdated(true, _requestId, responseId);
-    }
-
-    function resource(uint256 id, Resource calldata r) external {
-        _setResource(id, r);
-    }
-
-    function resourceByAgent(Resource calldata r) external onlyRoles(AGENTS) {
         unchecked {
-            _setResource(0, r);
-        }
-    }
+            if (id != 0) {
+                t = (tradeType == TradeType.RESPONSE)
+                    ? responsesPerRequest[subjectId][id]
+                    : exchangesPerResource[subjectId][id];
+                if (t.approved) revert Approved();
 
-    /// target `resourceId`
-    /// proposed `Trade`
-    function exchange(
-        uint256 _resourceId,
-        Trade calldata _t
-    ) external isResourceAvailable(_t.resource) {
-        _deposit(msg.sender, address(this), _t.currency, _t.amount);
-
-        uint256 exchangeId = getTradeIdByUser(false, _resourceId, msg.sender);
-
-        Trade storage t;
-        if (exchangeId == 0) {
-            unchecked {
-                exchangeId = ++exchangeIdsPerResource[_resourceId];
+                // Update trade.
+                (_t.resource > 0) ? t.resource = _t.resource : t.resource;
+                if (t.currency == address(0) && t.amount != 0)
+                    t.amount += _t.amount;
+                if (t.amount != 0)
+                    route(t.currency, address(this), t.from, t.amount);
+                (bytes(_t.content).length > 0)
+                    ? t.content = _t.content
+                    : t.content;
+                (bytes(_t.data).length > 0) ? t.data = _t.data : t.data;
+            } else {
+                // Store trade.
+                t = (tradeType == TradeType.RESPONSE)
+                    ? responsesPerRequest[subjectId][
+                        ++responseIdsPerRequest[subjectId]
+                    ]
+                    : exchangesPerResource[subjectId][
+                        ++exchangeIdsPerResource[subjectId]
+                    ];
+                t.approved = false;
+                t.from = _t.from;
+                t.resource = _t.resource;
+                t.currency = _t.currency;
+                t.amount = _t.amount;
+                t.content = _t.content;
+                t.data = _t.data;
             }
-
-            t = exchangesPerResource[_resourceId][exchangeId];
-
-            // Store trade.
-            t.from = msg.sender;
-            (_t.resource > 0) ? t.resource = _t.resource : t.resource;
-            (_t.currency != address(0)) ? t.currency = _t.currency : t.currency;
-            (_t.amount > 0) ? t.amount = _t.amount : t.amount;
-            (bytes(_t.content).length > 0) ? t.content = _t.content : t.content;
-            (bytes(_t.data).length > 0) ? t.data = _t.data : t.data;
-        } else {
-            t = exchangesPerResource[_resourceId][exchangeId];
-            if (t.approved) revert Approved();
-
-            // Update payment if different. Other data stay intact.
-            if (t.currency == address(0) && t.amount != 0)
-                t.amount += _t.amount;
-            if (t.currency != address(0) && t.amount != 0)
-                route(t.currency, address(this), t.from, t.amount);
         }
 
-        emit TradeUpdated(false, _resourceId, exchangeId);
+        emit TradeUpdated(tradeType, subjectId, id);
     }
 
     /* -------------------------------------------------------------------------- */
@@ -196,38 +191,62 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     /// @notice Request
 
-    function withdrawRequest(uint256 _requestId) external {
-        Request storage r = requests[_requestId];
+    function withdrawRequest(uint256 id) external {
+        Request storage r = requests[id];
         if (r.from != msg.sender) revert NotOriginalPoster();
 
         (r.currency != address(0))
             ? route(r.currency, address(this), msg.sender, r.drop)
             : build(msg.sender, r.drop);
-        delete requests[_requestId];
-        emit RequestUpdated(_requestId);
+        delete requests[id];
+        emit RequestUpdated(id);
     }
 
     /// @notice Resource
 
-    function withdrawResource(uint256 _resourceId) external {
-        Resource storage r = resources[_resourceId];
+    function withdrawResource(uint256 id) external {
+        Resource storage r = resources[id];
         if (r.from != msg.sender) revert NotOriginalPoster();
 
-        delete resources[_resourceId];
-        emit ResourceUpdated(_resourceId);
+        delete resources[id];
+        emit ResourceUpdated(id);
     }
 
     /// @notice Trade
 
+    function withdrawTrade(
+        TradeType tradeType,
+        uint256 subjectId,
+        uint256 tradeId
+    ) external {
+        Trade storage t;
+        (tradeType == TradeType.RESPONSE)
+            ? t = responsesPerRequest[subjectId][tradeId]
+            : t = exchangesPerResource[subjectId][tradeId];
+        if (t.approved) revert Approved();
+        if (t.from != msg.sender) revert NotOriginalPoster();
+
+        // Refund payment.
+        (t.currency != address(0))
+            ? route(t.currency, address(this), msg.sender, t.amount)
+            : build(msg.sender, t.amount);
+
+        // Remove trade.
+        (tradeType == TradeType.RESPONSE)
+            ? delete responsesPerRequest[subjectId][tradeId]
+            : delete exchangesPerResource[subjectId][tradeId];
+        emit TradeUpdated(tradeType, subjectId, tradeId);
+    }
+
     function approveResponse(
-        uint256 _requestId,
-        uint256 responseId,
+        uint256 subjectId,
+        uint256 tradeId,
         uint256 amount
     ) external {
-        Request storage r = requests[_requestId];
+        Request storage r = requests[subjectId];
         if (r.from != msg.sender) revert NotOriginalPoster();
 
-        Trade storage t = responsesPerRequest[_requestId][responseId];
+        Trade storage t = responsesPerRequest[subjectId][tradeId];
         if (t.from == address(0)) revert InvalidTrade();
         if (!t.approved) {
             // Aprove trade.
@@ -241,15 +260,15 @@ contract Bulletin is OwnableRoles, IBulletin {
                 ? route(r.currency, address(this), t.from, amount)
                 : build(t.from, amount);
 
-            emit TradeUpdated(true, _requestId, responseId);
+            emit TradeUpdated(TradeType.RESPONSE, subjectId, tradeId);
         } else revert Approved();
     }
 
-    function approveExchange(uint256 _resourceId, uint256 exchangeId) external {
-        Resource storage r = resources[_resourceId];
+    function approveExchange(uint256 subjectId, uint256 tradeId) external {
+        Resource storage r = resources[subjectId];
         if (r.from != msg.sender) revert NotOriginalPoster();
 
-        Trade storage t = exchangesPerResource[_resourceId][exchangeId];
+        Trade storage t = exchangesPerResource[subjectId][tradeId];
         if (t.from == address(0)) revert InvalidTrade();
         if (!t.approved) {
             // Aprove trade.
@@ -257,75 +276,16 @@ contract Bulletin is OwnableRoles, IBulletin {
 
             // Accept payment.
             (t.currency != address(0))
-                ? route(t.currency, address(this), r.beneficiary, t.amount)
-                : build(r.beneficiary, t.amount);
+                ? route(t.currency, address(this), r.from, t.amount)
+                : build(r.from, t.amount);
 
-            emit TradeUpdated(false, _resourceId, exchangeId);
+            emit TradeUpdated(TradeType.EXCHANGE, subjectId, tradeId);
         } else revert Approved();
-    }
-
-    function withdrawTrade(
-        bool isResponse,
-        uint256 subjectId,
-        uint256 tradeId
-    ) external {
-        Trade storage t;
-        (isResponse)
-            ? t = responsesPerRequest[subjectId][tradeId]
-            : t = exchangesPerResource[subjectId][tradeId];
-        if (t.approved) revert Approved();
-        if (t.from != msg.sender) revert NotOriginalPoster();
-
-        // Refund payment.
-        (t.currency != address(0))
-            ? route(t.currency, address(this), msg.sender, t.amount)
-            : build(msg.sender, t.amount);
-
-        // Remove trade.
-        (isResponse)
-            ? delete responsesPerRequest[subjectId][tradeId]
-            : delete exchangesPerResource[subjectId][tradeId];
-        emit TradeUpdated(isResponse, subjectId, tradeId);
     }
 
     /* -------------------------------------------------------------------------- */
     /*                                  Internal.                                 */
     /* -------------------------------------------------------------------------- */
-
-    function _setRequest(uint256 id, Request calldata _r) internal {
-        if (id != 0) {
-            Request storage r = requests[id];
-            if (r.from != msg.sender) revert Unauthorized();
-            (bytes(_r.title).length > 0) ? r.title = _r.title : r.title;
-            (bytes(_r.detail).length > 0) ? r.detail = _r.detail : r.detail;
-        } else {
-            if (_r.from != msg.sender) revert Unauthorized();
-            _deposit(_r.from, address(this), _r.currency, _r.drop);
-
-            unchecked {
-                requests[id = ++requestId] = _r;
-            }
-        }
-        emit RequestUpdated(id);
-    }
-
-    function _setResource(uint256 id, Resource calldata _r) internal {
-        if (id != 0) {
-            Resource storage r = resources[id];
-            if (r.from != msg.sender) revert Unauthorized();
-            (_r.beneficiary != address(0))
-                ? r.beneficiary = _r.beneficiary
-                : r.beneficiary;
-            (bytes(_r.title).length > 0) ? r.title = _r.title : r.title;
-            (bytes(_r.detail).length > 0) ? r.detail = _r.detail : r.detail;
-        } else {
-            if (_r.from != msg.sender) revert Unauthorized();
-            unchecked {
-                resources[id = ++resourceId] = _r;
-            }
-        }
-        emit ResourceUpdated(id);
-    }
 
     /// @dev Helper function to route currency.
     function route(
@@ -405,27 +365,27 @@ contract Bulletin is OwnableRoles, IBulletin {
     }
 
     function getTrade(
-        bool isResponse,
+        TradeType tradeType,
         uint256 subjectId,
         uint256 tradeId
     ) external view returns (Trade memory) {
         return
-            (isResponse)
+            (tradeType == TradeType.RESPONSE)
                 ? responsesPerRequest[subjectId][tradeId]
                 : exchangesPerResource[subjectId][tradeId];
     }
 
     function getTradeIdByUser(
-        bool isResponse,
+        TradeType tradeType,
         uint256 subjectId,
         address user
     ) public view returns (uint256 tradeId) {
         Trade storage t;
-        uint256 length = (isResponse)
+        uint256 length = (tradeType == TradeType.RESPONSE)
             ? responseIdsPerRequest[subjectId]
             : exchangeIdsPerResource[subjectId];
         for (uint256 i = 1; i <= length; ++i) {
-            (isResponse)
+            (tradeType == TradeType.RESPONSE)
                 ? t = responsesPerRequest[subjectId][i]
                 : t = exchangesPerResource[subjectId][i];
             if (t.from == user) tradeId = i;
