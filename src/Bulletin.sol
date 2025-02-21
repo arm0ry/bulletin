@@ -164,7 +164,7 @@ contract Bulletin is OwnableRoles, IBulletin {
                 (_t.resource > 0) ? t.resource = _t.resource : t.resource;
                 if (t.currency == address(0) && t.amount != 0)
                     t.amount += _t.amount;
-                if (t.amount != 0)
+                if (t.currency != address(0) && t.amount != 0)
                     route(t.currency, address(this), t.from, t.amount);
                 (bytes(_t.content).length > 0)
                     ? t.content = _t.content
