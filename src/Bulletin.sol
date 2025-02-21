@@ -69,7 +69,7 @@ contract Bulletin is OwnableRoles, IBulletin {
     function activate(
         address user,
         uint256 limit
-    ) public onlyOwnerOrRoles(AGENTS) {
+    ) public onlyOwnerOrRoles(EXTENSIONS) {
         credits[user] = Credit({limit: limit, amount: limit});
     }
 
@@ -81,7 +81,6 @@ contract Bulletin is OwnableRoles, IBulletin {
 
         unchecked {
             if (newLimit > c.limit) {
-                // TODO: test this logic
                 c.amount += newLimit - c.limit;
                 c.limit = newLimit;
             } else {
@@ -96,11 +95,15 @@ contract Bulletin is OwnableRoles, IBulletin {
     /*                                   Assets.                                  */
     /* -------------------------------------------------------------------------- */
 
+    // TODO: deprecate AGENTS check for `requestBySig` function
     function request(uint256 id, Request calldata _r) external {
         if (id != 0) {
             Request storage r = requests[id];
-            if (r.from != msg.sender && rolesOf(msg.sender) != AGENTS)
-                revert Unauthorized();
+            if (
+                r.from == address(0) &&
+                r.from != msg.sender &&
+                rolesOf(msg.sender) != AGENTS
+            ) revert Unauthorized();
             (bytes(_r.title).length > 0) ? r.title = _r.title : r.title;
             (bytes(_r.detail).length > 0) ? r.detail = _r.detail : r.detail;
         } else {
@@ -115,11 +118,15 @@ contract Bulletin is OwnableRoles, IBulletin {
         emit RequestUpdated(id);
     }
 
+    // TODO: deprecate AGENTS check for `resourceBySig` function
     function resource(uint256 id, Resource calldata _r) external {
         if (id != 0) {
             Resource storage r = resources[id];
-            if (r.from != msg.sender && rolesOf(msg.sender) != AGENTS)
-                revert Unauthorized();
+            if (
+                r.from == address(0) &&
+                r.from != msg.sender &&
+                rolesOf(msg.sender) != AGENTS
+            ) revert Unauthorized();
 
             (_r.from != address(0)) ? r.from = _r.from : r.from;
             (bytes(_r.title).length > 0) ? r.title = _r.title : r.title;

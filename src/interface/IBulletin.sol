@@ -84,7 +84,6 @@ interface IBulletin {
 
     function withdrawRequest(uint256 requestId) external;
     function withdrawResource(uint256 resourceId) external;
-
     function withdrawTrade(
         TradeType tradeType,
         uint256 subjectId,
