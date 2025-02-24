@@ -162,8 +162,10 @@ contract Bulletin is OwnableRoles, IBulletin {
 
                 // Update trade.
                 (_t.resource > 0) ? t.resource = _t.resource : t.resource;
-                if (t.currency == address(0) && t.amount != 0)
-                    t.amount += _t.amount;
+                if (t.currency == address(0) && t.amount != 0) {
+                    Credit storage c = credits[t.from];
+                    c.amount += t.amount;
+                }
                 if (t.currency != address(0) && t.amount != 0)
                     route(t.currency, address(this), t.from, t.amount);
                 (bytes(_t.content).length > 0)
@@ -329,8 +331,10 @@ contract Bulletin is OwnableRoles, IBulletin {
         uint256 amount
     ) internal {
         if (currency == address(0) && amount != 0) {
+            // Only activated address can deposit
             Credit storage c = credits[from];
-            c.amount -= amount;
+            if (c.limit != 0) c.amount -= amount;
+            else revert NotYetActivated();
         }
 
         if (currency != address(0) && amount != 0)

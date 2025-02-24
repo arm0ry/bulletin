@@ -69,6 +69,7 @@ interface IBulletin {
     error NotOriginalPoster();
     error Approved();
     error InvalidTrade();
+    error NotYetActivated();
 
     /* -------------------------------------------------------------------------- */
     /*                     Public / External Write Functions.                     */
