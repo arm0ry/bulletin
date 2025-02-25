@@ -26,6 +26,8 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     uint40 public requestId;
     uint40 public resourceId;
+    address public constant STAKE = address(0xbeef);
+    address public constant CREDIT = address(0);
 
     // Mappings by user.
     mapping(address => Credit) internal credits;
@@ -150,28 +152,41 @@ contract Bulletin is OwnableRoles, IBulletin {
             revert Unauthorized();
         _deposit(_t.from, address(this), _t.currency, _t.amount);
 
-        uint256 id = getTradeIdByUser(tradeType, subjectId, _t.from);
+        (uint256 tradeId, bool approved, uint256 stakeId) = getTradeIdByUser(
+            tradeType,
+            subjectId,
+            _t.from
+        );
+        if (_t.currency == STAKE && !approved)
+            revert CannotStakeWithoutApproval();
 
         Trade storage t;
         unchecked {
-            if (id != 0) {
+            if (_t.currency != STAKE && tradeId != 0) {
+                // Non-staking trades.
                 t = (tradeType == TradeType.RESPONSE)
-                    ? responsesPerRequest[subjectId][id]
-                    : exchangesPerResource[subjectId][id];
+                    ? responsesPerRequest[subjectId][tradeId]
+                    : exchangesPerResource[subjectId][tradeId];
                 if (t.approved) revert Approved();
 
-                // Update trade.
-                (_t.resource > 0) ? t.resource = _t.resource : t.resource;
-                if (t.currency == address(0) && t.amount != 0) {
-                    Credit storage c = credits[t.from];
-                    c.amount += t.amount;
-                }
-                if (t.currency != address(0) && t.amount != 0)
+                // Refund & update new amount.
+                if (t.currency == CREDIT && t.amount != 0) {
+                    credits[t.from].amount += t.amount;
+                    t.amount = _t.amount;
+                } else if (t.amount != 0)
                     route(t.currency, address(this), t.from, t.amount);
-                (bytes(_t.content).length > 0)
-                    ? t.content = _t.content
-                    : t.content;
-                (bytes(_t.data).length > 0) ? t.data = _t.data : t.data;
+                else {}
+            } else if (_t.currency == STAKE && stakeId != 0) {
+                // Staking trades.
+                t = (tradeType == TradeType.RESPONSE)
+                    ? responsesPerRequest[subjectId][stakeId]
+                    : exchangesPerResource[subjectId][stakeId];
+
+                // Refund & update new amount.
+                if (t.currency == STAKE && t.amount != 0) {
+                    credits[t.from].amount += t.amount;
+                    t.amount = _t.amount;
+                } else {}
             } else {
                 // Store trade.
                 t = (tradeType == TradeType.RESPONSE)
@@ -183,15 +198,17 @@ contract Bulletin is OwnableRoles, IBulletin {
                     ];
                 t.approved = false;
                 t.from = _t.from;
-                t.resource = _t.resource;
                 t.currency = _t.currency;
                 t.amount = _t.amount;
-                t.content = _t.content;
-                t.data = _t.data;
             }
         }
 
-        emit TradeUpdated(tradeType, subjectId, id);
+        // Update trade.
+        (_t.resource > 0) ? t.resource = _t.resource : t.resource;
+        (bytes(_t.content).length > 0) ? t.content = _t.content : t.content;
+        (bytes(_t.data).length > 0) ? t.data = _t.data : t.data;
+
+        emit TradeUpdated(tradeType, subjectId, tradeId);
     }
 
     /* -------------------------------------------------------------------------- */
@@ -330,15 +347,13 @@ contract Bulletin is OwnableRoles, IBulletin {
         address currency,
         uint256 amount
     ) internal {
-        if (currency == address(0) && amount != 0) {
+        if ((currency == STAKE || currency == CREDIT) && amount != 0) {
             // Only activated address can deposit
             Credit storage c = credits[from];
             if (c.limit != 0) c.amount -= amount;
             else revert NotYetActivated();
-        }
-
-        if (currency != address(0) && amount != 0)
-            route(currency, from, to, amount);
+        } else if (amount != 0) route(currency, from, to, amount);
+        else {}
     }
 
     /* -------------------------------------------------------------------------- */
@@ -390,7 +405,7 @@ contract Bulletin is OwnableRoles, IBulletin {
         TradeType tradeType,
         uint256 subjectId,
         address user
-    ) public view returns (uint256 tradeId) {
+    ) public view returns (uint256 tradeId, bool approved, uint256 stakeId) {
         Trade storage t;
         uint256 length = (tradeType == TradeType.RESPONSE)
             ? responseIdsPerRequest[subjectId]
@@ -399,7 +414,15 @@ contract Bulletin is OwnableRoles, IBulletin {
             (tradeType == TradeType.RESPONSE)
                 ? t = responsesPerRequest[subjectId][i]
                 : t = exchangesPerResource[subjectId][i];
-            if (t.from == user) tradeId = i;
+            if (t.from == user) {
+                // When op approves trades to her requests or for her resources, we
+                // can assume with high probability that op has interacted with the
+                // address that initiated the trade.
+                if (t.currency != STAKE) {
+                    approved = t.approved;
+                    tradeId = i;
+                } else stakeId = i;
+            }
         }
     }
 

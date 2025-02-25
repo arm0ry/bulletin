@@ -48,7 +48,7 @@ interface IBulletin {
         bool approved;
         address from;
         bytes32 resource;
-        address currency;
+        address currency; // `0xbeef` reserved for staking, `address(0)` reserved for credit uses
         uint256 amount;
         string content;
         bytes data; // reserved for responses, externalities, etc.
@@ -66,10 +66,11 @@ interface IBulletin {
     /*                                   Errors.                                  */
     /* -------------------------------------------------------------------------- */
 
-    error NotOriginalPoster();
     error Approved();
     error InvalidTrade();
     error NotYetActivated();
+    error NotOriginalPoster();
+    error CannotStakeWithoutApproval();
 
     /* -------------------------------------------------------------------------- */
     /*                     Public / External Write Functions.                     */
