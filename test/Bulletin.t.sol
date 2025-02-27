@@ -860,11 +860,9 @@ contract BulletinTest is Test {
             1,
             amount
         );
-        (uint256 tradeId, bool approval, uint256 sId) = Bulletin(
-            address(bulletin)
-        ).getTradeIdByUser(IBulletin.TradeType.EXCHANGE, 1, bob);
+        (uint256 tradeId, uint256 sId) = Bulletin(address(bulletin))
+            .getTradeAndStakeIdsByUser(IBulletin.TradeType.EXCHANGE, 1, bob);
         assertEq(tradeId, 1);
-        assertEq(approval, true);
         assertEq(stakingId, sId);
 
         IBulletin.Trade memory trade = bulletin.getTrade(
@@ -891,11 +889,9 @@ contract BulletinTest is Test {
             2 ether
         );
 
-        (uint256 tradeId, bool approval, uint256 sId) = Bulletin(
-            address(bulletin)
-        ).getTradeIdByUser(IBulletin.TradeType.EXCHANGE, 1, bob);
+        (uint256 tradeId, uint256 sId) = Bulletin(address(bulletin))
+            .getTradeAndStakeIdsByUser(IBulletin.TradeType.EXCHANGE, 1, bob);
         assertEq(tradeId, 1);
-        assertEq(approval, true);
         assertEq(stakingId, sId);
 
         IBulletin.Trade memory trade = bulletin.getTrade(
@@ -910,24 +906,6 @@ contract BulletinTest is Test {
         assertEq(trade.resource, 0);
         assertEq(trade.content, TEST);
         assertEq(trade.data, BYTES);
-    }
-
-    function test_Staking_CannotStakeWithoutApproval() public payable {
-        test_ApproveCreditExchangeForResource_ByMember(2 ether);
-
-        IBulletin.Trade memory trade = IBulletin.Trade({
-            approved: true,
-            from: bob,
-            resource: bytes32(0),
-            currency: address(0xbeef),
-            amount: 2 ether,
-            content: TEST,
-            data: BYTES
-        });
-
-        vm.expectRevert(IBulletin.CannotStakeWithoutApproval.selector);
-        vm.prank(bob);
-        bulletin.trade(IBulletin.TradeType.EXCHANGE, 2, trade);
     }
 
     function test_ExchangeForResource_ApproveCurrency(
@@ -961,7 +939,7 @@ contract BulletinTest is Test {
         assertEq(mock.balanceOf(bob), 0);
         assertEq(mock.balanceOf(address(bulletin)), amount);
 
-        (uint256 id, , ) = bulletin.getTradeIdByUser(
+        (uint256 id, ) = bulletin.getTradeAndStakeIdsByUser(
             IBulletin.TradeType.EXCHANGE,
             resourceId,
             bob
@@ -1021,7 +999,7 @@ contract BulletinTest is Test {
         assertEq(trade.content, TEST);
         assertEq(trade.data, BYTES);
 
-        (uint256 id, , ) = bulletin.getTradeIdByUser(
+        (uint256 id, ) = bulletin.getTradeAndStakeIdsByUser(
             IBulletin.TradeType.EXCHANGE,
             resourceId,
             bob
@@ -1086,7 +1064,7 @@ contract BulletinTest is Test {
 
         withdrawExchange(bob, resourceId, exchangeId);
 
-        (uint256 id, , ) = bulletin.getTradeIdByUser(
+        (uint256 id, ) = bulletin.getTradeAndStakeIdsByUser(
             IBulletin.TradeType.EXCHANGE,
             resourceId,
             bob
@@ -1173,7 +1151,7 @@ contract BulletinTest is Test {
 
         withdrawResponse(alice, requestId, responseId);
 
-        (uint256 id, , ) = bulletin.getTradeIdByUser(
+        (uint256 id, ) = bulletin.getTradeAndStakeIdsByUser(
             IBulletin.TradeType.RESPONSE,
             requestId,
             alice
@@ -1225,7 +1203,7 @@ contract BulletinTest is Test {
         assertEq(MockERC20(mock).balanceOf(address(bulletin)), 0);
         assertEq(MockERC20(mock).balanceOf(alice), amount);
 
-        (uint256 id, , ) = bulletin.getTradeIdByUser(
+        (uint256 id, ) = bulletin.getTradeAndStakeIdsByUser(
             IBulletin.TradeType.RESPONSE,
             requestId,
             alice
@@ -1269,7 +1247,7 @@ contract BulletinTest is Test {
         // approve first trade
         approveResponse(owner, requestId, responseId, (amount * 20) / 100);
 
-        (uint256 id, , ) = bulletin.getTradeIdByUser(
+        (uint256 id, ) = bulletin.getTradeAndStakeIdsByUser(
             IBulletin.TradeType.RESPONSE,
             requestId,
             alice
@@ -1301,7 +1279,7 @@ contract BulletinTest is Test {
         assertEq(MockERC20(mock).balanceOf(alice), (amount * 20) / 100);
         assertEq(MockERC20(mock).balanceOf(bob), (amount * 20) / 100);
 
-        (id, , ) = bulletin.getTradeIdByUser(
+        (id, ) = bulletin.getTradeAndStakeIdsByUser(
             IBulletin.TradeType.RESPONSE,
             requestId,
             bob

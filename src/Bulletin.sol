@@ -152,13 +152,11 @@ contract Bulletin is OwnableRoles, IBulletin {
             revert Unauthorized();
         _deposit(_t.from, address(this), _t.currency, _t.amount);
 
-        (uint256 tradeId, bool approved, uint256 stakeId) = getTradeIdByUser(
+        (uint256 tradeId, uint256 stakeId) = getTradeAndStakeIdsByUser(
             tradeType,
             subjectId,
             _t.from
         );
-        if (_t.currency == STAKE && !approved)
-            revert CannotStakeWithoutApproval();
 
         Trade storage t;
         unchecked {
@@ -401,11 +399,11 @@ contract Bulletin is OwnableRoles, IBulletin {
                 : exchangesPerResource[subjectId][tradeId];
     }
 
-    function getTradeIdByUser(
+    function getTradeAndStakeIdsByUser(
         TradeType tradeType,
         uint256 subjectId,
         address user
-    ) public view returns (uint256 tradeId, bool approved, uint256 stakeId) {
+    ) public view returns (uint256 tradeId, uint256 stakeId) {
         Trade storage t;
         uint256 length = (tradeType == TradeType.RESPONSE)
             ? responseIdsPerRequest[subjectId]
@@ -415,13 +413,9 @@ contract Bulletin is OwnableRoles, IBulletin {
                 ? t = responsesPerRequest[subjectId][i]
                 : t = exchangesPerResource[subjectId][i];
             if (t.from == user) {
-                // When op approves trades to her requests or for her resources, we
-                // can assume with high probability that op has interacted with the
-                // address that initiated the trade.
-                if (t.currency != STAKE) {
-                    approved = t.approved;
-                    tradeId = i;
-                } else stakeId = i;
+                if (t.currency == STAKE) {
+                    stakeId = i;
+                } else tradeId = i;
             }
         }
     }
