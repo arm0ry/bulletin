@@ -27,7 +27,6 @@ contract Bulletin is OwnableRoles, IBulletin {
     uint40 public requestId;
     uint40 public resourceId;
     address public constant STAKE = address(0xbeef);
-    address public constant CREDIT = address(0);
 
     // Mappings by user.
     mapping(address => Credit) internal credits;
@@ -71,8 +70,11 @@ contract Bulletin is OwnableRoles, IBulletin {
     function activate(
         address user,
         uint256 limit
-    ) public onlyOwnerOrRoles(EXTENSIONS) {
-        credits[user] = Credit({limit: limit, amount: limit});
+    ) public onlyOwnerOrRoles(AGENTS) {
+        Credit storage c = credits[user];
+        if (c.limit != 0) revert Activated();
+        c.amount += limit;
+        c.limit = limit;
     }
 
     function adjust(
@@ -80,17 +82,18 @@ contract Bulletin is OwnableRoles, IBulletin {
         uint256 newLimit
     ) public onlyOwnerOrRoles(EXTENSIONS) {
         Credit storage c = credits[user];
-
-        unchecked {
-            if (newLimit > c.limit) {
-                c.amount += newLimit - c.limit;
-                c.limit = newLimit;
-            } else {
-                uint256 gap = c.limit - newLimit;
-                (gap > c.amount) ? c.amount = 0 : c.amount -= gap;
-                c.limit = newLimit;
+        if (c.limit != 0) {
+            unchecked {
+                if (newLimit > c.limit) {
+                    c.amount += newLimit - c.limit;
+                    c.limit = newLimit;
+                } else {
+                    uint256 gap = c.limit - newLimit;
+                    (gap > c.amount) ? c.amount = 0 : c.amount -= gap;
+                    c.limit = newLimit;
+                }
             }
-        }
+        } else revert NotYetActivated();
     }
 
     /* -------------------------------------------------------------------------- */
@@ -168,7 +171,7 @@ contract Bulletin is OwnableRoles, IBulletin {
                 if (t.approved) revert Approved();
 
                 // Refund & update new amount.
-                if (t.currency == CREDIT && t.amount != 0) {
+                if (t.currency == address(0) && t.amount != 0) {
                     credits[t.from].amount += t.amount;
                     t.amount = _t.amount;
                 } else if (t.amount != 0)
@@ -345,11 +348,11 @@ contract Bulletin is OwnableRoles, IBulletin {
         address currency,
         uint256 amount
     ) internal {
-        if ((currency == STAKE || currency == CREDIT) && amount != 0) {
+        if ((currency == STAKE || currency == address(0)) && amount != 0) {
             // Only activated address can deposit
             Credit storage c = credits[from];
-            if (c.limit != 0) c.amount -= amount;
-            else revert NotYetActivated();
+            if (c.limit == 0) revert NotYetActivated();
+            c.amount -= amount;
         } else if (amount != 0) route(currency, from, to, amount);
         else {}
     }

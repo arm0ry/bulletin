@@ -67,6 +67,7 @@ interface IBulletin {
     /* -------------------------------------------------------------------------- */
 
     error Approved();
+    error Activated();
     error InvalidTrade();
     error NotYetActivated();
     error NotOriginalPoster();

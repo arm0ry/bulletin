@@ -761,14 +761,18 @@ contract BulletinTest is Test {
         vm.assume(5 ether > amount);
         vm.assume(amount > 10_000);
 
-        activate(address(bulletin), owner, bob, 10 ether);
+        IBulletin.Credit memory credit = bulletin.getCredit(alice);
+        assertEq(credit.limit, 0 ether);
+        assertEq(credit.amount, 0 ether);
+
         activate(address(bulletin), owner, alice, 10 ether);
+        activate(address(bulletin), owner, bob, 10 ether);
 
         // Bob trades with Alice by spending credits.
         uint256 resourceId = resource(false, alice);
         uint256 exchangeId = setupCreditExchange(bob, resourceId, amount);
 
-        IBulletin.Credit memory credit = bulletin.getCredit(bob);
+        credit = bulletin.getCredit(bob);
         assertEq(credit.limit, 10 ether);
         assertEq(credit.amount, 10 ether - amount);
 
