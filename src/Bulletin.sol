@@ -102,20 +102,27 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     // TODO: deprecate AGENTS check for `requestBySig` function
     function request(uint256 id, Request calldata _r) external {
+        if (
+            (_r.from != msg.sender && rolesOf(msg.sender) != AGENTS) ||
+            _r.currency == STAKE
+        ) revert Unauthorized();
+        _deposit(_r.from, address(this), _r.currency, _r.drop);
+
         if (id != 0) {
             Request storage r = requests[id];
-            if (
-                r.from == address(0) &&
-                r.from != msg.sender &&
-                rolesOf(msg.sender) != AGENTS
-            ) revert Unauthorized();
             (bytes(_r.title).length > 0) ? r.title = _r.title : r.title;
             (bytes(_r.detail).length > 0) ? r.detail = _r.detail : r.detail;
-        } else {
-            if (_r.from != msg.sender && rolesOf(msg.sender) != AGENTS)
-                revert Unauthorized();
-            _deposit(_r.from, address(this), _r.currency, _r.drop);
 
+            // Refund.
+            if (r.currency == address(0) && _r.drop != 0) {
+                credits[r.from].amount += r.drop;
+            } else if (r.drop != 0)
+                route(r.currency, address(this), r.from, r.drop);
+            else {}
+
+            // Update new amount.
+            r.drop = _r.drop;
+        } else {
             unchecked {
                 requests[id = ++requestId] = _r;
             }
@@ -125,6 +132,9 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     // TODO: deprecate AGENTS check for `resourceBySig` function
     function resource(uint256 id, Resource calldata _r) external {
+        // Only members may post resources.
+        _deposit(_r.from, address(this), address(0), 0);
+
         if (id != 0) {
             Resource storage r = resources[id];
             if (
@@ -170,26 +180,31 @@ contract Bulletin is OwnableRoles, IBulletin {
                     : exchangesPerResource[subjectId][tradeId];
                 if (t.approved) revert Approved();
 
-                // Refund & update new amount.
+                // Refund.
                 if (t.currency == address(0) && t.amount != 0) {
                     credits[t.from].amount += t.amount;
-                    t.amount = _t.amount;
                 } else if (t.amount != 0)
                     route(t.currency, address(this), t.from, t.amount);
                 else {}
+
+                // Update.
+                t.amount = _t.amount;
+                (_t.resource > 0) ? t.resource = _t.resource : t.resource;
             } else if (_t.currency == STAKE && stakeId != 0) {
                 // Staking trades.
                 t = (tradeType == TradeType.RESPONSE)
                     ? responsesPerRequest[subjectId][stakeId]
                     : exchangesPerResource[subjectId][stakeId];
 
-                // Refund & update new amount.
                 if (t.currency == STAKE && t.amount != 0) {
+                    // Refund.
                     credits[t.from].amount += t.amount;
+
+                    // Update.
                     t.amount = _t.amount;
+                    t.resource = bytes32(block.timestamp);
                 } else {}
             } else {
-                // Store trade.
                 t = (tradeType == TradeType.RESPONSE)
                     ? responsesPerRequest[subjectId][
                         ++responseIdsPerRequest[subjectId]
@@ -197,15 +212,22 @@ contract Bulletin is OwnableRoles, IBulletin {
                     : exchangesPerResource[subjectId][
                         ++exchangeIdsPerResource[subjectId]
                     ];
-                t.approved = false;
+
+                // Store.
                 t.from = _t.from;
                 t.currency = _t.currency;
                 t.amount = _t.amount;
+
+                // Store `block.timestamp` when staking, otherwise store resource hash as supplied.
+                (_t.currency == STAKE)
+                    ? t.resource = bytes32(block.timestamp)
+                    : (_t.resource > 0)
+                        ? t.resource = _t.resource
+                        : t.resource;
             }
         }
 
-        // Update trade.
-        (_t.resource > 0) ? t.resource = _t.resource : t.resource;
+        // Update when available.
         (bytes(_t.content).length > 0) ? t.content = _t.content : t.content;
         (bytes(_t.data).length > 0) ? t.data = _t.data : t.data;
 
@@ -254,9 +276,13 @@ contract Bulletin is OwnableRoles, IBulletin {
         if (t.from != msg.sender) revert NotOriginalPoster();
 
         // Refund payment.
-        (t.currency != address(0))
-            ? route(t.currency, address(this), msg.sender, t.amount)
-            : build(msg.sender, t.amount);
+        if (t.currency == address(0)) {
+            build(msg.sender, t.amount);
+        } else if (t.currency == STAKE) {
+            build(msg.sender, t.amount);
+        } else {
+            route(t.currency, address(this), msg.sender, t.amount);
+        }
 
         // Remove trade.
         (tradeType == TradeType.RESPONSE)
@@ -348,9 +374,14 @@ contract Bulletin is OwnableRoles, IBulletin {
         address currency,
         uint256 amount
     ) internal {
-        if ((currency == STAKE || currency == address(0)) && amount != 0) {
-            // Only activated address can deposit
-            Credit storage c = credits[from];
+        Credit storage c = credits[from];
+        if ((currency == STAKE || currency == address(0)) && amount == 0) {
+            // Validate credit activation
+            if (c.limit == 0) revert NotYetActivated();
+        } else if (
+            (currency == STAKE || currency == address(0)) && amount != 0
+        ) {
+            // Only activated address can stake or deposit credit
             if (c.limit == 0) revert NotYetActivated();
             c.amount -= amount;
         } else if (amount != 0) route(currency, from, to, amount);
