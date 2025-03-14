@@ -14,10 +14,10 @@ contract Bulletin is OwnableRoles, IBulletin {
     /*                                 Constants.                                 */
     /* -------------------------------------------------------------------------- */
 
-    // The permissioned role reserved for autonomous agents.
+    // `Agents` assist with activating credit limits and facilitating coordination.
     uint8 internal constant AGENTS = 1 << 0;
 
-    // The permissioned role reserved for autonomous agents.
+    // `Extensions` may adjust credit limits.
     uint8 internal constant EXTENSIONS = 1 << 1;
 
     /* -------------------------------------------------------------------------- */
@@ -100,29 +100,34 @@ contract Bulletin is OwnableRoles, IBulletin {
     /*                                   Assets.                                  */
     /* -------------------------------------------------------------------------- */
 
-    // TODO: deprecate AGENTS check for `requestBySig` function
+    // TODO: `requestBySig`, `resourceBySig`, `tradeBySig`
+
+    // Anyone may post a `Request` and offer compensation to those that submit a response, or `Trade`.
     function request(uint256 id, Request calldata _r) external {
         if (
             (_r.from != msg.sender && rolesOf(msg.sender) != AGENTS) ||
             _r.currency == STAKE
         ) revert Unauthorized();
-        _deposit(_r.from, address(this), _r.currency, _r.drop);
+
+        // Confirm account is activated.
+        deposit(_r.from, address(0), 0);
+
+        // Deposit.
+        deposit(_r.from, _r.currency, _r.drop);
 
         if (id != 0) {
+            // Modify previous `Request`.
             Request storage r = requests[id];
             (bytes(_r.title).length > 0) ? r.title = _r.title : r.title;
             (bytes(_r.detail).length > 0) ? r.detail = _r.detail : r.detail;
 
             // Refund.
-            if (r.currency == address(0) && _r.drop != 0) {
-                credits[r.from].amount += r.drop;
-            } else if (r.drop != 0)
-                route(r.currency, address(this), r.from, r.drop);
-            else {}
+            if (r.drop != 0) refund(r.from, r.currency, r.drop);
 
             // Update new amount.
             r.drop = _r.drop;
         } else {
+            // Add new request.
             unchecked {
                 requests[id = ++requestId] = _r;
             }
@@ -130,23 +135,22 @@ contract Bulletin is OwnableRoles, IBulletin {
         emit RequestUpdated(id);
     }
 
-    // TODO: deprecate AGENTS check for `resourceBySig` function
+    // Only those with credit limits activated may post resources.
     function resource(uint256 id, Resource calldata _r) external {
-        // Only members may post resources.
-        _deposit(_r.from, address(this), address(0), 0);
+        // Confirm account is activated.
+        deposit(_r.from, address(0), 0);
 
         if (id != 0) {
+            // Modify previous `Resource`.
             Resource storage r = resources[id];
-            if (
-                r.from == address(0) &&
-                r.from != msg.sender &&
-                rolesOf(msg.sender) != AGENTS
-            ) revert Unauthorized();
+            if (r.from != msg.sender && rolesOf(msg.sender) != AGENTS)
+                revert Unauthorized();
 
             (_r.from != address(0)) ? r.from = _r.from : r.from;
             (bytes(_r.title).length > 0) ? r.title = _r.title : r.title;
             (bytes(_r.detail).length > 0) ? r.detail = _r.detail : r.detail;
         } else {
+            // Add new resource.
             if (_r.from != msg.sender && rolesOf(msg.sender) != AGENTS)
                 revert Unauthorized();
             unchecked {
@@ -156,14 +160,14 @@ contract Bulletin is OwnableRoles, IBulletin {
         emit ResourceUpdated(id);
     }
 
+    // Anyone may submit a trade for `Resource` or as a response to `Request`.
     function trade(
         TradeType tradeType,
         uint256 subjectId,
         Trade calldata _t
     ) external isResourceAvailable(_t.resource) {
-        if (_t.from != msg.sender && rolesOf(msg.sender) != AGENTS)
-            revert Unauthorized();
-        _deposit(_t.from, address(this), _t.currency, _t.amount);
+        if (_t.from != msg.sender) revert Unauthorized();
+        deposit(_t.from, _t.currency, _t.amount);
 
         (uint256 tradeId, uint256 stakeId) = getTradeAndStakeIdsByUser(
             tradeType,
@@ -181,11 +185,7 @@ contract Bulletin is OwnableRoles, IBulletin {
                 if (t.approved) revert Approved();
 
                 // Refund.
-                if (t.currency == address(0) && t.amount != 0) {
-                    credits[t.from].amount += t.amount;
-                } else if (t.amount != 0)
-                    route(t.currency, address(this), t.from, t.amount);
-                else {}
+                if (t.amount != 0) refund(t.from, t.currency, t.amount);
 
                 // Update.
                 t.amount = _t.amount;
@@ -196,14 +196,12 @@ contract Bulletin is OwnableRoles, IBulletin {
                     ? responsesPerRequest[subjectId][stakeId]
                     : exchangesPerResource[subjectId][stakeId];
 
-                if (t.currency == STAKE && t.amount != 0) {
-                    // Refund.
-                    credits[t.from].amount += t.amount;
+                // Refund.
+                if (t.amount != 0) refund(t.from, t.currency, t.amount);
 
-                    // Update.
-                    t.amount = _t.amount;
-                    t.resource = bytes32(block.timestamp);
-                } else {}
+                // Update.
+                t.amount = _t.amount;
+                t.resource = bytes32(block.timestamp);
             } else {
                 t = (tradeType == TradeType.RESPONSE)
                     ? responsesPerRequest[subjectId][
@@ -244,9 +242,8 @@ contract Bulletin is OwnableRoles, IBulletin {
         Request storage r = requests[id];
         if (r.from != msg.sender) revert NotOriginalPoster();
 
-        (r.currency != address(0))
-            ? route(r.currency, address(this), msg.sender, r.drop)
-            : build(msg.sender, r.drop);
+        // Refund.
+        if (r.drop != 0) refund(msg.sender, r.currency, r.drop);
         delete requests[id];
         emit RequestUpdated(id);
     }
@@ -275,14 +272,8 @@ contract Bulletin is OwnableRoles, IBulletin {
         if (t.approved) revert Approved();
         if (t.from != msg.sender) revert NotOriginalPoster();
 
-        // Refund payment.
-        if (t.currency == address(0)) {
-            build(msg.sender, t.amount);
-        } else if (t.currency == STAKE) {
-            build(msg.sender, t.amount);
-        } else {
-            route(t.currency, address(this), msg.sender, t.amount);
-        }
+        // Refund.
+        refund(msg.sender, t.currency, t.amount);
 
         // Remove trade.
         (tradeType == TradeType.RESPONSE)
@@ -291,6 +282,7 @@ contract Bulletin is OwnableRoles, IBulletin {
         emit TradeUpdated(tradeType, subjectId, tradeId);
     }
 
+    // Approve trades for `Request`.
     function approveResponse(
         uint256 subjectId,
         uint256 tradeId,
@@ -317,12 +309,14 @@ contract Bulletin is OwnableRoles, IBulletin {
         } else revert Approved();
     }
 
+    // Approve trades for `Resource`.
+    // Cannot approve staking trades.
     function approveExchange(uint256 subjectId, uint256 tradeId) external {
         Resource storage r = resources[subjectId];
         if (r.from != msg.sender) revert NotOriginalPoster();
 
         Trade storage t = exchangesPerResource[subjectId][tradeId];
-        if (t.from == address(0)) revert InvalidTrade();
+        if (t.from == address(0) || t.currency == STAKE) revert InvalidTrade();
         if (!t.approved) {
             // Aprove trade.
             t.approved = true;
@@ -340,7 +334,7 @@ contract Bulletin is OwnableRoles, IBulletin {
     /*                                  Internal.                                 */
     /* -------------------------------------------------------------------------- */
 
-    /// @dev Helper function to route currency.
+    // Route currency.
     function route(
         address currency,
         address from,
@@ -352,28 +346,15 @@ contract Bulletin is OwnableRoles, IBulletin {
             : SafeTransferLib.safeTransferFrom(currency, from, to, amount);
     }
 
-    /// @dev Helper function to build credit for user.
+    // Build credit.
     function build(address user, uint256 amount) internal {
         unchecked {
-            if (amount != 0) credits[user].amount += amount;
+            credits[user].amount += amount;
         }
     }
 
-    function deposit(
-        address from,
-        address to,
-        address currency,
-        uint256 amount
-    ) external onlyRoles(EXTENSIONS) {
-        _deposit(from, to, currency, amount);
-    }
-
-    function _deposit(
-        address from,
-        address to,
-        address currency,
-        uint256 amount
-    ) internal {
+    // Deposit currency or credit.
+    function deposit(address from, address currency, uint256 amount) internal {
         Credit storage c = credits[from];
         if ((currency == STAKE || currency == address(0)) && amount == 0) {
             // Validate credit activation
@@ -384,8 +365,15 @@ contract Bulletin is OwnableRoles, IBulletin {
             // Only activated address can stake or deposit credit
             if (c.limit == 0) revert NotYetActivated();
             c.amount -= amount;
-        } else if (amount != 0) route(currency, from, to, amount);
+        } else if (amount != 0) route(currency, from, address(this), amount);
         else {}
+    }
+
+    // Refund currency or credit.
+    function refund(address to, address currency, uint256 amount) internal {
+        (currency == address(0) || currency == STAKE)
+            ? build(to, amount)
+            : route(currency, address(this), to, amount);
     }
 
     /* -------------------------------------------------------------------------- */

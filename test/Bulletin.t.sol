@@ -500,6 +500,7 @@ contract BulletinTest is Test {
     ) public payable {
         vm.assume(max > amount);
         mock.mint(owner, max);
+        activate(address(bulletin), owner, owner, 10 ether);
         uint256 requestId = requestAndDepositCurrency(true, owner, amount);
         IBulletin.Request memory _request = bulletin.getRequest(requestId);
 
@@ -515,7 +516,6 @@ contract BulletinTest is Test {
 
     function test_RequestByUser() public payable {
         activate(address(bulletin), owner, alice, 10 ether);
-        grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
 
         uint256 requestId = request(false, alice);
         IBulletin.Request memory _request = bulletin.getRequest(requestId);
@@ -533,7 +533,7 @@ contract BulletinTest is Test {
     ) public payable {
         vm.assume(max > amount);
         mock.mint(alice, max);
-        grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
+        activate(address(bulletin), owner, alice, 10 ether);
 
         uint256 requestId = requestAndDepositCurrency(false, alice, amount);
         IBulletin.Request memory _request = bulletin.getRequest(requestId);
@@ -619,6 +619,7 @@ contract BulletinTest is Test {
     ) public payable {
         vm.assume(1e20 > amount);
         mock.mint(owner, amount);
+        activate(address(bulletin), owner, owner, 10 ether);
         uint256 requestId = requestAndDepositCurrency(true, owner, amount);
 
         withdrawRequest(owner, requestId);
@@ -655,7 +656,8 @@ contract BulletinTest is Test {
     ) public payable {
         vm.assume(max > amount);
         mock.mint(alice, max);
-        grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
+
+        activate(address(bulletin), owner, alice, 10 ether);
 
         uint256 requestId = requestAndDepositCurrency(false, alice, amount);
         withdrawRequest(alice, requestId);
@@ -1122,10 +1124,8 @@ contract BulletinTest is Test {
         vm.assume(max > amount);
 
         // setup request
+        activate(address(bulletin), owner, owner, 10 ether);
         uint256 requestId = requestAndDepositCurrency(true, owner, amount);
-
-        // grant PERMISSIONED role
-        grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
 
         // setup resource
         activate(address(bulletin), owner, alice, 10 ether);
@@ -1164,10 +1164,8 @@ contract BulletinTest is Test {
         vm.assume(max > amount);
 
         // setup request
+        activate(address(bulletin), owner, owner, 10 ether);
         uint256 requestId = requestAndDepositCurrency(true, owner, amount);
-
-        // grant PERMISSIONED role
-        grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
 
         // setup resource
         activate(address(bulletin), owner, alice, 10 ether);
@@ -1221,10 +1219,8 @@ contract BulletinTest is Test {
         mock.mint(owner, amount);
 
         // setup request
+        activate(address(bulletin), owner, owner, 10 ether);
         uint256 requestId = requestAndDepositCurrency(true, owner, amount);
-
-        // grant PERMISSIONED role
-        grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
 
         // setup first trade
         uint256 responseId = setupSimpleResponse(alice, requestId);
@@ -1264,11 +1260,8 @@ contract BulletinTest is Test {
         mock.mint(owner, amount);
 
         // setup ask
+        activate(address(bulletin), owner, owner, 10 ether);
         uint256 requestId = requestAndDepositCurrency(true, owner, amount);
-
-        // grant PERMISSIONED role
-        grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
-        grantRole(address(bulletin), owner, bob, PERMISSIONED_USER);
 
         // grant BULLETIN role
         grantRole(address(bulletin), owner, address(bulletin), BULLETIN_ROLE);
