@@ -31,7 +31,6 @@ contract BulletinTest is Test {
     bytes32 internal constant _OWNER_SLOT =
         0xffffffffffffffffffffffffffffffffffffffffffffffffffffffff74873927;
     uint40 public constant BULLETIN_ROLE = 1 << 0;
-    uint40 public constant PERMISSIONED_USER = 1 << 2;
 
     /// @dev Mock Data.
     uint40 constant PAST = 100000;
@@ -637,7 +636,6 @@ contract BulletinTest is Test {
 
     function test_RequestByUser_Withdraw() public payable {
         activate(address(bulletin), owner, alice, 10 ether);
-        grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
 
         uint256 requestId = request(false, alice);
         withdrawRequest(alice, requestId);
@@ -718,7 +716,6 @@ contract BulletinTest is Test {
 
     function test_ResourceByUser() public payable {
         activate(address(bulletin), owner, alice, 10 ether);
-        grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
         uint256 resourceId = resource(false, alice);
 
         withdrawResource(alice, resourceId);
@@ -941,7 +938,6 @@ contract BulletinTest is Test {
         uint256 amount
     ) public payable {
         vm.assume(1e20 > amount);
-        grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
         activate(address(bulletin), owner, alice, 10 ether);
         uint256 resourceId = resource(false, alice);
 
@@ -1067,7 +1063,6 @@ contract BulletinTest is Test {
 
     function test_ExchangeForResource_Withdraw(uint256 amount) public payable {
         activate(address(bulletin), owner, alice, 10 ether);
-        grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
         uint256 resourceId = resource(false, alice);
 
         mock.mint(bob, amount);
@@ -1329,7 +1324,6 @@ contract BulletinTest is Test {
     //     uint256 requestId = askAndDepositCurrency(true, owner, amount);
 
     //     // grant PERMISSIONED role
-    //     grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
 
     //     // setup first resource
     //     uint256 resourceId = resource(false, alice);
@@ -1351,7 +1345,6 @@ contract BulletinTest is Test {
     //     settleRequest(
     //         owner,
     //         uint40(requestId),
-    //         uint40(PERMISSIONED_USER),
     //         perc
     //     );
 
@@ -1371,8 +1364,6 @@ contract BulletinTest is Test {
     //     uint256 requestId = askAndDepositCurrency(true, owner, amount);
 
     //     // grant PERMISSIONED role
-    //     grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
-    //     grantRole(address(bulletin), owner, bob, PERMISSIONED_USER);
 
     //     // grant BULLETIN role
     //     grantRole(address(bulletin), owner, address(bulletin), BULLETIN_ROLE);
@@ -1409,7 +1400,6 @@ contract BulletinTest is Test {
     //     uint16[] memory perc = new uint16[](2);
     //     perc[0] = 6000;
     //     perc[1] = 4000;
-    //     settleRequest(owner, uint40(requestId), PERMISSIONED_USER, perc);
 
     //     assertEq(
     //         MockERC20(mock).balanceOf(address(bulletin)),
@@ -1440,9 +1430,6 @@ contract BulletinTest is Test {
     //     uint256 requestId = askAndDepositCurrency(true, owner, amount);
 
     //     // grant PERMISSIONED role
-    //     grantRole(address(bulletin), owner, alice, PERMISSIONED_USER);
-    //     grantRole(address(bulletin), owner, bob, PERMISSIONED_USER);
-    //     grantRole(address(bulletin), owner, charlie, PERMISSIONED_USER);
 
     //     // grant BULLETIN role
     //     grantRole(address(bulletin), owner, address(bulletin), BULLETIN_ROLE);
@@ -1494,7 +1481,6 @@ contract BulletinTest is Test {
     //     perc[0] = 5000;
     //     perc[1] = 2500;
     //     perc[2] = 2500;
-    //     settleRequest(owner, uint40(requestId), PERMISSIONED_USER, perc);
 
     //     assertEq(
     //         MockERC20(mock).balanceOf(address(bulletin)),

@@ -68,6 +68,7 @@ interface IBulletin {
 
     error Approved();
     error Activated();
+    error Denounced();
     error InvalidTrade();
     error NotYetActivated();
     error NotOriginalPoster();
