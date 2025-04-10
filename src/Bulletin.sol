@@ -47,17 +47,6 @@ contract Bulletin is OwnableRoles, IBulletin {
     /*                                 Modifiers.                                 */
     /* -------------------------------------------------------------------------- */
 
-    // Validate ownership of `Resource` from an external `Bulletin`.
-    modifier isResourceAvailable(bytes32 source) {
-        if (source != 0) {
-            (address _b, uint256 _r) = decodeAsset(source);
-            Resource memory r = IBulletin(_b).getResource(_r);
-            if (r.from != msg.sender) revert NotOriginalPoster();
-        }
-
-        _;
-    }
-
     // Addresses with `DENOUNCED` role have restricted access to `request`,
     // `resource`, `trade`, and approve functions.
     modifier denounced() {
@@ -117,7 +106,8 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     // Post or update a `Request`.
     // Accept `Trade` offers and distribute compensation, in currency or credit.
-    // Access is restricted to address with `AGENTS` and without `DENOUNCED` permission.
+    // Access is restricted to `msg.sender` and `AGENTS`.
+    // Access is denied for `DENOUNCED` permission.
     // Staking is not allowed.
     function request(uint256 id, Request calldata _r) external denounced {
         if (
@@ -126,7 +116,7 @@ contract Bulletin is OwnableRoles, IBulletin {
         ) revert Unauthorized();
 
         // Confirm account is activated.
-        deposit(_r.from, address(0), 0);
+        if (credits[msg.sender].limit == 0) revert Unauthorized();
 
         // Deposit.
         deposit(_r.from, _r.currency, _r.drop);
@@ -134,9 +124,7 @@ contract Bulletin is OwnableRoles, IBulletin {
         if (id != 0) {
             // Modify previous `Request`.
             Request storage r = requests[id];
-            (bytes(_r.title).length > 0) ? r.title = _r.title : r.title;
-            (bytes(_r.detail).length > 0) ? r.detail = _r.detail : r.detail;
-
+            (bytes(_r.data).length > 0) ? r.data = _r.data : r.data;
             // Refund.
             if (r.drop != 0) refund(r.from, r.currency, r.drop);
 
@@ -153,11 +141,8 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     // Post or update a `Resource`.
     // Accept `Trade` offers and receive compensation, in currency, credit, or `Resource`.
-    // Access is restricted to address with `AGENTS` and credit limits.
+    // Access is restricted to `msg.sender` and `AGENTS`.
     function resource(uint256 id, Resource calldata _r) external denounced {
-        // Confirm account is activated.
-        deposit(_r.from, address(0), 0);
-
         if (id != 0) {
             // Modify previous `Resource`.
             Resource storage r = resources[id];
@@ -165,9 +150,11 @@ contract Bulletin is OwnableRoles, IBulletin {
                 revert Unauthorized();
 
             (_r.from != address(0)) ? r.from = _r.from : r.from;
-            (bytes(_r.title).length > 0) ? r.title = _r.title : r.title;
-            (bytes(_r.detail).length > 0) ? r.detail = _r.detail : r.detail;
+            (bytes(_r.data).length > 0) ? r.data = _r.data : r.data;
         } else {
+            // Stake to post `Resource`.
+            if (_r.stake != 0) deposit(_r.from, address(0xbeef), _r.stake);
+
             // Add new resource.
             if (_r.from != msg.sender && rolesOf(msg.sender) != AGENTS)
                 revert Unauthorized();
@@ -180,14 +167,19 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     // Submit a `Trade`.
     // Propose a trade and respond to a `Request` or propose a trade in exchange for a `Resource`
-    // Access is restricted to address without `DENOUNCED` permission.
+    // Access is denied for `DENOUNCED` permission.
     function trade(
         TradeType tradeType,
         uint256 subjectId,
         Trade calldata _t
-    ) external isResourceAvailable(_t.resource) denounced {
+    ) external denounced {
         if (_t.from != msg.sender) revert Unauthorized();
-        deposit(_t.from, _t.currency, _t.amount);
+
+        if (_t.resource != 0) {
+            (address c, uint256 id) = decodeAsset(_t.resource);
+            Resource memory r = IBulletin(c).getResource(id);
+            if (r.from != msg.sender) revert NotOriginalPoster();
+        } else deposit(_t.from, _t.currency, _t.amount);
 
         (uint256 tradeId, uint256 stakeId) = getTradeAndStakeIdsByUser(
             tradeType,
@@ -198,7 +190,7 @@ contract Bulletin is OwnableRoles, IBulletin {
         Trade storage t;
         unchecked {
             if (_t.currency != address(0xbeef) && tradeId != 0) {
-                // Non-staking trades.
+                // Modify previous non-staking trade.
                 t = (tradeType == TradeType.RESPONSE)
                     ? responsesPerRequest[subjectId][tradeId]
                     : exchangesPerResource[subjectId][tradeId];
@@ -211,7 +203,7 @@ contract Bulletin is OwnableRoles, IBulletin {
                 t.amount = _t.amount;
                 (_t.resource > 0) ? t.resource = _t.resource : t.resource;
             } else if (_t.currency == address(0xbeef) && stakeId != 0) {
-                // Staking trades.
+                // Modify previous staking trades.
                 t = (tradeType == TradeType.RESPONSE)
                     ? responsesPerRequest[subjectId][stakeId]
                     : exchangesPerResource[subjectId][stakeId];
@@ -223,6 +215,7 @@ contract Bulletin is OwnableRoles, IBulletin {
                 t.amount = _t.amount;
                 t.resource = bytes32(block.timestamp);
             } else {
+                // Add a non-staking or staking trade.
                 t = (tradeType == TradeType.RESPONSE)
                     ? responsesPerRequest[subjectId][
                         ++responseIdsPerRequest[subjectId]
@@ -274,6 +267,10 @@ contract Bulletin is OwnableRoles, IBulletin {
         Resource storage r = resources[id];
         if (r.from != msg.sender) revert NotOriginalPoster();
 
+        // Refund.
+        refund(msg.sender, address(0xbeef), r.stake);
+
+        // Withdraw.
         delete resources[id];
         emit ResourceUpdated(id);
     }
@@ -303,7 +300,7 @@ contract Bulletin is OwnableRoles, IBulletin {
     }
 
     // Approve trades for `Request`.
-    // Access is restricted to address without `DENOUNCED` permission.
+    // Access is denied for `DENOUNCED` permission.
     // Approving staking trades is not allowed for staking does not transfer currency or credit.
     function approveResponse(
         uint256 subjectId,
@@ -333,7 +330,7 @@ contract Bulletin is OwnableRoles, IBulletin {
     }
 
     // Approve trades for `Resource`.
-    // Access is restricted to address without `DENOUNCED` permission.
+    // Access is denied for `DENOUNCED` permission.
     // Approving staking trades is not allowed for staking does not transfer currency or credit.
     function approveExchange(
         uint256 subjectId,
@@ -385,12 +382,6 @@ contract Bulletin is OwnableRoles, IBulletin {
     function deposit(address from, address currency, uint256 amount) internal {
         Credit storage c = credits[from];
         if (
-            (currency == address(0xbeef) || currency == address(0)) &&
-            amount == 0
-        ) {
-            // Validate credit activation
-            if (c.limit == 0) revert NotYetActivated();
-        } else if (
             (currency == address(0xbeef) || currency == address(0)) &&
             amount != 0
         ) {

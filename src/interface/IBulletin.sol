@@ -26,10 +26,9 @@ interface IBulletin {
      */
     struct Request {
         address from;
-        string title;
-        string detail;
         address currency;
         uint256 drop;
+        bytes data;
     }
 
     /**
@@ -37,8 +36,8 @@ interface IBulletin {
      */
     struct Resource {
         address from;
-        string title;
-        string detail;
+        uint256 stake; // todo: consider changing to "deposit"
+        bytes data; // title, detail
     }
 
     /**
