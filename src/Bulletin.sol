@@ -253,10 +253,11 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     function withdrawRequest(uint256 id) external {
         Request storage r = requests[id];
-        if (r.from != msg.sender) revert NotOriginalPoster();
+        if (r.from != msg.sender && rolesOf(msg.sender) != AGENTS)
+            revert NotOriginalPoster();
 
         // Refund.
-        if (r.drop != 0) refund(msg.sender, r.currency, r.drop);
+        if (r.drop != 0) refund(r.from, r.currency, r.drop);
         delete requests[id];
         emit RequestUpdated(id);
     }
@@ -265,10 +266,11 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     function withdrawResource(uint256 id) external {
         Resource storage r = resources[id];
-        if (r.from != msg.sender) revert NotOriginalPoster();
+        if (r.from != msg.sender && rolesOf(msg.sender) != AGENTS)
+            revert NotOriginalPoster();
 
         // Refund.
-        refund(msg.sender, address(0xbeef), r.stake);
+        refund(r.from, address(0xbeef), r.stake);
 
         // Withdraw.
         delete resources[id];
@@ -287,10 +289,11 @@ contract Bulletin is OwnableRoles, IBulletin {
             ? t = responsesPerRequest[subjectId][tradeId]
             : t = exchangesPerResource[subjectId][tradeId];
         if (t.approved) revert Approved();
-        if (t.from != msg.sender) revert NotOriginalPoster();
+        if (t.from != msg.sender && rolesOf(msg.sender) != AGENTS)
+            revert NotOriginalPoster();
 
         // Refund.
-        refund(msg.sender, t.currency, t.amount);
+        refund(t.from, t.currency, t.amount);
 
         // Remove trade.
         (tradeType == TradeType.RESPONSE)
