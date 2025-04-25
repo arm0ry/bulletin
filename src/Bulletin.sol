@@ -17,18 +17,15 @@ contract Bulletin is OwnableRoles, IBulletin {
     // `Agents` assist with activating credit limits and facilitating coordination.
     uint8 internal constant AGENTS = 1 << 0;
 
-    // `Extensions` may adjust credit limits.
-    uint8 internal constant EXTENSIONS = 1 << 1;
-
     // `Denounced` has restricted access to Bulltin.
-    uint8 internal constant DENOUNCED = 1 << 2;
+    uint8 internal constant DENOUNCED = 1 << 1;
 
     /* -------------------------------------------------------------------------- */
     /*                                  Storage.                                  */
     /* -------------------------------------------------------------------------- */
 
-    uint24 public requestId;
-    uint24 public resourceId;
+    uint40 public requestId;
+    uint40 public resourceId;
 
     // Mappings by user.
     mapping(address => Credit) internal credits;
@@ -78,11 +75,11 @@ contract Bulletin is OwnableRoles, IBulletin {
     }
 
     // Adjust a user's credit limit.
-    // Access is restricted to address with `owner()` and `EXTENSIONS` permissions.
+    // Access is restricted to address with `owner()` and `AGENTS` permissions.
     function adjust(
         address user,
         uint256 newLimit
-    ) public onlyOwnerOrRoles(EXTENSIONS) {
+    ) public onlyOwnerOrRoles(AGENTS) {
         Credit storage c = credits[user];
         if (c.limit != 0) {
             unchecked {
@@ -102,21 +99,28 @@ contract Bulletin is OwnableRoles, IBulletin {
     /*                                   Assets.                                  */
     /* -------------------------------------------------------------------------- */
 
-    // TODO: `requestBySig`, `resourceBySig`, `tradeBySig`
-
     // Post or update a `Request`.
     // Accept `Trade` offers and distribute compensation, in currency or credit.
     // Access is restricted to `msg.sender` and `AGENTS`.
     // Access is denied for `DENOUNCED` permission.
     // Staking is not allowed.
     function request(uint256 id, Request calldata _r) external denounced {
-        if (
-            (_r.from != msg.sender && rolesOf(msg.sender) != AGENTS) ||
-            _r.currency == address(0xbeef)
-        ) revert Unauthorized();
+        if (_r.from != msg.sender) revert Unauthorized();
 
-        // Confirm account is activated.
-        if (credits[msg.sender].limit == 0) revert Unauthorized();
+        _request(id, _r);
+    }
+
+    // TODO: `requestBySig`
+    function requestByAgents(
+        uint256 id,
+        Request calldata _r
+    ) external onlyRoles(AGENTS) {
+        _request(id, _r);
+    }
+
+    function _request(uint256 id, Request calldata _r) internal {
+        if (credits[_r.from].limit == 0 || _r.currency == address(0xbeef))
+            revert Unauthorized();
 
         // Deposit.
         deposit(_r.from, _r.currency, _r.drop);
@@ -143,11 +147,26 @@ contract Bulletin is OwnableRoles, IBulletin {
     // Accept `Trade` offers and receive compensation, in currency, credit, or `Resource`.
     // Access is restricted to `msg.sender` and `AGENTS`.
     function resource(uint256 id, Resource calldata _r) external denounced {
+        _resource(false, id, _r);
+    }
+
+    // TODO: `resourceBySig`
+    function resourceByAgents(
+        uint256 id,
+        Resource calldata _r
+    ) external onlyRoles(AGENTS) {
+        _resource(true, id, _r);
+    }
+
+    function _resource(
+        bool isAgent,
+        uint256 id,
+        Resource calldata _r
+    ) internal {
         if (id != 0) {
-            // Modify previous `Resource`.
             Resource storage r = resources[id];
-            if (r.from != msg.sender && rolesOf(msg.sender) != AGENTS)
-                revert Unauthorized();
+            if (!isAgent)
+                if (r.from != msg.sender) revert Unauthorized();
 
             (_r.from != address(0)) ? r.from = _r.from : r.from;
             (bytes(_r.data).length > 0) ? r.data = _r.data : r.data;
@@ -156,8 +175,9 @@ contract Bulletin is OwnableRoles, IBulletin {
             if (_r.stake != 0) deposit(_r.from, address(0xbeef), _r.stake);
 
             // Add new resource.
-            if (_r.from != msg.sender && rolesOf(msg.sender) != AGENTS)
-                revert Unauthorized();
+            if (!isAgent)
+                if (_r.from != msg.sender) revert Unauthorized();
+
             unchecked {
                 resources[id = ++resourceId] = _r;
             }
@@ -174,11 +194,27 @@ contract Bulletin is OwnableRoles, IBulletin {
         Trade calldata _t
     ) external denounced {
         if (_t.from != msg.sender) revert Unauthorized();
+        _trade(tradeType, subjectId, _t);
+    }
 
+    function tradeByAgents(
+        TradeType tradeType,
+        uint256 subjectId,
+        Trade calldata _t
+    ) external onlyRoles(AGENTS) {
+        _trade(tradeType, subjectId, _t);
+    }
+
+    // TODO: `tradeBySig`
+    function _trade(
+        TradeType tradeType,
+        uint256 subjectId,
+        Trade calldata _t
+    ) internal {
         if (_t.resource != 0) {
             (address c, uint256 id) = decodeAsset(_t.resource);
             Resource memory r = IBulletin(c).getResource(id);
-            if (r.from != msg.sender) revert NotOriginalPoster();
+            if (r.from != _t.from) revert NotOriginalPoster();
         } else deposit(_t.from, _t.currency, _t.amount);
 
         (uint256 tradeId, uint256 stakeId) = getTradeAndStakeIdsByUser(
