@@ -36,7 +36,6 @@ interface IBulletin {
      */
     struct Resource {
         address from;
-        uint256 stake; // todo: consider changing to "deposit"
         bytes data; // title, detail
     }
 
@@ -68,6 +67,7 @@ interface IBulletin {
     error Approved();
     error Activated();
     error Denounced();
+    error DropRequired();
     error InvalidTrade();
     error NotYetActivated();
     error NotOriginalPoster();
