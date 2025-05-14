@@ -36,6 +36,7 @@ interface IBulletin {
      */
     struct Resource {
         address from;
+        // uint48 supply;
         bytes data; // title, detail
     }
 

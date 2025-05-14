@@ -675,6 +675,9 @@ contract BulletinTest is Test {
 
         approveExchange(alice, resourceId, exchangeId);
 
+        vm.prank(alice);
+        bulletin.claim(IBulletin.TradeType.EXCHANGE, resourceId, exchangeId);
+
         credit = bulletin.getCredit(alice);
         assertEq(credit.limit, 10 ether);
         assertEq(credit.amount, 10 ether + amount);

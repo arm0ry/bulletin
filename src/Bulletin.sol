@@ -5,13 +5,14 @@ import {IBulletin} from "src/interface/IBulletin.sol";
 import {OwnableRoles} from "src/auth/OwnableRoles.sol";
 import {SafeTransferLib} from "lib/solady/src/utils/SafeTransferLib.sol";
 import {IERC20} from "src/interface/IERC20.sol";
+import {BERC6909} from "src/BERC6909.sol";
 
 import {console} from "lib/forge-std/src/console.sol";
 
 /// @title Bulletin
 /// @notice A system to store and interact with requests and resources.
 /// @author audsssy.eth
-contract Bulletin is OwnableRoles, IBulletin {
+contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     /* -------------------------------------------------------------------------- */
     /*                                   Roles.                                   */
     /* -------------------------------------------------------------------------- */
@@ -28,8 +29,8 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     uint40 public requestId;
     uint40 public resourceId;
-    uint256 public reqThreshold;
-    uint256 public resThreshold;
+    uint256 public creditLimitToAddRequest;
+    uint256 public creditLimitToAddResource;
 
     // Mappings by user.
     mapping(address => Credit) internal credits;
@@ -107,7 +108,6 @@ contract Bulletin is OwnableRoles, IBulletin {
         _request(id, _r);
     }
 
-    // TODO: `requestBySig`
     // Post or update a `Request` by Agent
     function requestByAgents(
         uint256 id,
@@ -118,7 +118,8 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     function _request(uint256 id, Request calldata _r) internal {
         // Address with credit balance above a credit limit threshold may post `Request`.
-        if (reqThreshold > credits[_r.from].limit) revert Unauthorized();
+        if (creditLimitToAddRequest > credits[_r.from].limit)
+            revert Unauthorized();
 
         // Deposit.
         if (_r.drop == 0) revert DropRequired();
@@ -149,7 +150,6 @@ contract Bulletin is OwnableRoles, IBulletin {
         _resource(false, id, _r);
     }
 
-    // TODO: `resourceBySig`
     // Post or update a `Resource` by Agent.
     function resourceByAgents(
         uint256 id,
@@ -164,7 +164,8 @@ contract Bulletin is OwnableRoles, IBulletin {
         Resource calldata _r
     ) internal {
         // Address with credit balance above a credit limit threshold may post `Resource`.
-        if (resThreshold > credits[_r.from].limit) revert Unauthorized();
+        if (creditLimitToAddResource > credits[_r.from].limit)
+            revert Unauthorized();
 
         if (id != 0) {
             Resource storage r = resources[id];
@@ -206,7 +207,6 @@ contract Bulletin is OwnableRoles, IBulletin {
         _trade(tradeType, subjectId, _t);
     }
 
-    // TODO: `tradeBySig`
     function _trade(
         TradeType tradeType,
         uint256 subjectId,
@@ -354,10 +354,37 @@ contract Bulletin is OwnableRoles, IBulletin {
             // Confirm amount is sufficient.
             if (amount != 0) r.drop -= amount;
 
+            // TODO: accept trade payment, if any
+            if (t.currency == address(0xc0d)) build(r.from, t.amount);
+            else if (t.currency != address(0))
+                route(t.currency, address(this), r.from, t.amount);
+            else {}
+
+            // TODO: update t.currency and t.amount as reward for future claim
+            t.currency = r.currency;
+            t.amount = amount;
+
+            // TODO: need separate func to distrbute payment based on token ownership
             // Distribute payment.
-            (r.currency == address(0xc0d))
-                ? build(t.from, amount)
-                : route(r.currency, address(this), t.from, amount);
+            // (r.currency == address(0xc0d))
+            //     ? build(t.from, amount)
+            //     : route(r.currency, address(this), t.from, amount);
+
+            // TODO: mint receipt
+            _mint(
+                t.from,
+                uint256(
+                    keccak256(
+                        abi.encode(
+                            address(this),
+                            TradeType.RESPONSE,
+                            subjectId,
+                            tradeId
+                        )
+                    )
+                ),
+                1
+            );
 
             emit TradeUpdated(TradeType.RESPONSE, subjectId, tradeId);
         } else revert Approved();
@@ -378,23 +405,85 @@ contract Bulletin is OwnableRoles, IBulletin {
             // Aprove trade.
             t.approved = true;
 
+            // TODO: need separate func to distrbute payment based on token ownership
             // Accept payment.
-            if (t.currency == address(0xc0d)) build(r.from, t.amount);
-            else if (t.currency != address(0))
-                route(t.currency, address(this), r.from, t.amount);
-            else {}
+            // if (t.currency == address(0xc0d)) build(r.from, t.amount);
+            // else if (t.currency != address(0))
+            //     route(t.currency, address(this), r.from, t.amount);
+            // else {}
 
+            // TODO: mint receipt
+            _mint(
+                r.from,
+                uint256(
+                    keccak256(
+                        abi.encode(
+                            address(this),
+                            TradeType.EXCHANGE,
+                            subjectId,
+                            tradeId
+                        )
+                    )
+                ),
+                1
+            );
+
+            console.log(
+                uint256(
+                    keccak256(
+                        abi.encode(
+                            address(this),
+                            TradeType.EXCHANGE,
+                            subjectId,
+                            tradeId
+                        )
+                    )
+                )
+            );
             emit TradeUpdated(TradeType.EXCHANGE, subjectId, tradeId);
         } else revert Approved();
     }
 
-    // Update reqThreshold or resThreshold
-    function updateThreshold(
+    // Update creditLimitToAddRequest or creditLimitToAddResource
+    function updateCreditLimitToAdd(
         uint256 req,
         uint256 res
     ) external onlyOwnerOrRoles(AGENT) {
-        reqThreshold = req;
-        resThreshold = res;
+        creditLimitToAddRequest = req;
+        creditLimitToAddResource = res;
+    }
+
+    /* -------------------------------------------------------------------------- */
+    /*                                   Claim.                                   */
+    /* -------------------------------------------------------------------------- */
+
+    function claim(
+        TradeType tradeType,
+        uint256 subjectId,
+        uint256 tradeId
+    ) external {
+        uint256 id = uint256(
+            keccak256(abi.encode(address(this), tradeType, subjectId, tradeId))
+        );
+
+        console.log(id);
+
+        // TODO: check owneship of receipt (aka confirmed trade token)
+        if (balanceOf(msg.sender, id) == 0) revert Unauthorized();
+
+        // Burn token.
+        _burn(msg.sender, id, 1);
+
+        Trade storage t;
+        (tradeType == TradeType.RESPONSE)
+            ? t = responsesPerRequest[subjectId][tradeId]
+            : t = exchangesPerResource[subjectId][tradeId];
+
+        // Distribute currency.
+        if (t.currency == address(0xc0d)) build(msg.sender, t.amount);
+        else if (t.currency != address(0))
+            route(t.currency, address(this), msg.sender, t.amount);
+        else {}
     }
 
     /* -------------------------------------------------------------------------- */
