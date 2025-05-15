@@ -638,7 +638,10 @@ contract BulletinTest is Test {
         // Approve exchange.
         approveExchange(alice, resourceId, exchangeId);
 
-        // Vendor receive currency.
+        // Vendor claim and receive currency.
+        vm.prank(alice);
+        bulletin.claim(IBulletin.TradeType.EXCHANGE, resourceId, exchangeId);
+
         trade = bulletin.getTrade(
             IBulletin.TradeType.EXCHANGE,
             resourceId,
@@ -646,8 +649,8 @@ contract BulletinTest is Test {
         );
         assertEq(trade.approved, true);
         assertEq(trade.from, bob);
-        assertEq(trade.currency, address(mock));
-        assertEq(trade.amount, amount);
+        assertEq(trade.currency, address(0));
+        assertEq(trade.amount, 0);
         assertEq(mock.balanceOf(alice), amount);
         assertEq(mock.balanceOf(address(bulletin)), 0);
     }
@@ -701,6 +704,9 @@ contract BulletinTest is Test {
         uint256 exchangeId = setupCreditExchange(alice, resourceId, amount);
         approveExchange(bob, resourceId, exchangeId);
 
+        vm.prank(bob);
+        bulletin.claim(IBulletin.TradeType.EXCHANGE, resourceId, exchangeId);
+
         credit = bulletin.getCredit(bob);
         assertEq(credit.amount, 8 ether + amount);
         credit = bulletin.getCredit(alice);
@@ -734,6 +740,9 @@ contract BulletinTest is Test {
         uint256 exchangeId = setupCreditExchange(alice, resourceId, amount);
         approveExchange(bob, resourceId, exchangeId);
 
+        vm.prank(bob);
+        bulletin.claim(IBulletin.TradeType.EXCHANGE, resourceId, exchangeId);
+
         credit = bulletin.getCredit(bob);
         assertEq(credit.amount, 6 ether + amount);
         credit = bulletin.getCredit(alice);
@@ -746,6 +755,9 @@ contract BulletinTest is Test {
         assertEq(credit.amount, 5 ether - amount);
 
         approveExchange(alice, 1, exchangeId);
+
+        vm.prank(alice);
+        bulletin.claim(IBulletin.TradeType.EXCHANGE, 1, exchangeId);
 
         credit = bulletin.getCredit(alice);
         assertEq(credit.limit, 2 ether);
@@ -885,6 +897,10 @@ contract BulletinTest is Test {
         assertEq(_trade.data, BYTES);
 
         approveExchange(alice, resourceId, exchangeId);
+
+        vm.prank(alice);
+        bulletin.claim(IBulletin.TradeType.EXCHANGE, resourceId, exchangeId);
+
         trade = bulletin.getTrade(
             IBulletin.TradeType.EXCHANGE,
             resourceId,
@@ -892,8 +908,8 @@ contract BulletinTest is Test {
         );
         assertEq(trade.approved, true);
         assertEq(trade.from, bob);
-        assertEq(trade.currency, address(mock));
-        assertEq(trade.amount, amount);
+        assertEq(trade.currency, address(0));
+        assertEq(trade.amount, 0);
         assertEq(mock.balanceOf(alice), amount);
         assertEq(mock.balanceOf(address(bulletin)), 0);
     }
@@ -1123,6 +1139,9 @@ contract BulletinTest is Test {
         // approve first trade
         approveResponse(owner, requestId, responseId, amount);
 
+        vm.prank(alice);
+        bulletin.claim(IBulletin.TradeType.RESPONSE, requestId, responseId);
+
         assertEq(MockERC20(mock).balanceOf(address(bulletin)), 0);
         assertEq(MockERC20(mock).balanceOf(alice), amount);
 
@@ -1182,8 +1201,8 @@ contract BulletinTest is Test {
         assertEq(lastTrade, responseId);
         assertEq(_trade.approved, true);
         assertEq(_trade.from, alice);
-        assertEq(_trade.currency, address(0));
-        assertEq(_trade.amount, 0);
+        assertEq(_trade.currency, address(mock));
+        assertEq(_trade.amount, (amount * 20) / 100);
         assertEq(_trade.resource, 0);
         assertEq(_trade.content, TEST);
         assertEq(_trade.data, BYTES);
@@ -1207,11 +1226,14 @@ contract BulletinTest is Test {
         // approve second trade
         approveResponse(owner, requestId, responseId, (amount * 20) / 100);
 
+        vm.prank(bob);
+        bulletin.claim(IBulletin.TradeType.RESPONSE, requestId, responseId);
+
         assertEq(
             MockERC20(mock).balanceOf(address(bulletin)),
-            amount - (amount * 20) / 100 - (amount * 20) / 100
+            amount - (amount * 20) / 100
         );
-        assertEq(MockERC20(mock).balanceOf(alice), (amount * 20) / 100);
+        assertEq(MockERC20(mock).balanceOf(alice), 0);
         assertEq(MockERC20(mock).balanceOf(bob), (amount * 20) / 100);
 
         (tradeId, , lastTrade, ) = bulletin.getTradeAndStakeIdsByUser(

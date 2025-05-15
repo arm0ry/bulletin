@@ -354,23 +354,13 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
             // Confirm amount is sufficient.
             if (amount != 0) r.drop -= amount;
 
-            // TODO: accept trade payment, if any
-            if (t.currency == address(0xc0d)) build(r.from, t.amount);
-            else if (t.currency != address(0))
-                route(t.currency, address(this), r.from, t.amount);
-            else {}
+            // Accept currency amount, if any.
+            route(t.currency, address(0), r.from, t.amount);
 
-            // TODO: update t.currency and t.amount as reward for future claim
+            // Update `t.currency` and `t.amount` and mint receipt for future `claim()`.
             t.currency = r.currency;
             t.amount = amount;
 
-            // TODO: need separate func to distrbute payment based on token ownership
-            // Distribute payment.
-            // (r.currency == address(0xc0d))
-            //     ? build(t.from, amount)
-            //     : route(r.currency, address(this), t.from, amount);
-
-            // TODO: mint receipt
             _mint(
                 t.from,
                 uint256(
@@ -405,14 +395,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
             // Aprove trade.
             t.approved = true;
 
-            // TODO: need separate func to distrbute payment based on token ownership
-            // Accept payment.
-            // if (t.currency == address(0xc0d)) build(r.from, t.amount);
-            // else if (t.currency != address(0))
-            //     route(t.currency, address(this), r.from, t.amount);
-            // else {}
-
-            // TODO: mint receipt
+            // Mint receipt for future `claim()`.
             _mint(
                 r.from,
                 uint256(
@@ -428,18 +411,6 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
                 1
             );
 
-            console.log(
-                uint256(
-                    keccak256(
-                        abi.encode(
-                            address(this),
-                            TradeType.EXCHANGE,
-                            subjectId,
-                            tradeId
-                        )
-                    )
-                )
-            );
             emit TradeUpdated(TradeType.EXCHANGE, subjectId, tradeId);
         } else revert Approved();
     }
@@ -468,7 +439,6 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
 
         console.log(id);
 
-        // TODO: check owneship of receipt (aka confirmed trade token)
         if (balanceOf(msg.sender, id) == 0) revert Unauthorized();
 
         // Burn token.
@@ -479,11 +449,11 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
             ? t = responsesPerRequest[subjectId][tradeId]
             : t = exchangesPerResource[subjectId][tradeId];
 
-        // Distribute currency.
-        if (t.currency == address(0xc0d)) build(msg.sender, t.amount);
-        else if (t.currency != address(0))
-            route(t.currency, address(this), msg.sender, t.amount);
-        else {}
+        // Distribute.
+        route(t.currency, address(this), msg.sender, t.amount);
+
+        delete t.currency;
+        delete t.amount;
     }
 
     /* -------------------------------------------------------------------------- */
@@ -497,9 +467,12 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         address to,
         uint256 amount
     ) internal {
-        (from == address(this))
-            ? SafeTransferLib.safeTransfer(currency, to, amount)
-            : SafeTransferLib.safeTransferFrom(currency, from, to, amount);
+        if (currency == address(0xc0d)) build(to, amount);
+        else if (currency != address(0))
+            (from == address(this))
+                ? SafeTransferLib.safeTransfer(currency, to, amount)
+                : SafeTransferLib.safeTransferFrom(currency, from, to, amount);
+        else return;
     }
 
     // Build credit.
