@@ -119,7 +119,8 @@ contract BulletinTest is Test {
             from: user,
             currency: address(0xc0d),
             drop: drop,
-            data: BYTES
+            data: BYTES,
+            uri: TEST
         });
 
         vm.prank((isOwner) ? owner : user);
@@ -136,7 +137,8 @@ contract BulletinTest is Test {
             from: user,
             currency: address(mock),
             drop: amount,
-            data: BYTES
+            data: BYTES,
+            uri: TEST
         });
 
         mockApprove((isOwner) ? owner : user, address(bulletin), amount);
@@ -173,7 +175,8 @@ contract BulletinTest is Test {
             from: op,
             currency: currency,
             drop: amount,
-            data: BYTES
+            data: BYTES,
+            uri: TEST
         });
         vm.prank(op);
         bulletin.request(requestId, r);
@@ -193,7 +196,8 @@ contract BulletinTest is Test {
     ) public payable returns (uint256 id) {
         IBulletin.Resource memory r = IBulletin.Resource({
             from: user,
-            data: BYTES
+            data: BYTES,
+            uri: TEST
         });
 
         vm.prank((isOwner) ? owner : user);
@@ -209,7 +213,8 @@ contract BulletinTest is Test {
         vm.warp(block.timestamp + 10);
         IBulletin.Resource memory r = IBulletin.Resource({
             from: newOwner,
-            data: BYTES
+            data: BYTES,
+            uri: TEST
         });
         vm.prank(op);
         bulletin.resource(resourceId, r);
@@ -677,6 +682,15 @@ contract BulletinTest is Test {
         assertEq(credit.amount, 10 ether - amount);
 
         approveExchange(alice, resourceId, exchangeId);
+
+        string memory uri = bulletin.tokenURI(
+            bulletin.encodeTokenId(
+                address(bulletin),
+                IBulletin.TradeType.EXCHANGE,
+                uint40(resourceId),
+                uint40(exchangeId)
+            )
+        );
 
         vm.prank(alice);
         bulletin.claim(IBulletin.TradeType.EXCHANGE, resourceId, exchangeId);

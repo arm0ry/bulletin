@@ -361,17 +361,26 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
             t.currency = r.currency;
             t.amount = amount;
 
+            // Mint engagement token for future utility.
             _mint(
                 t.from,
-                uint256(
-                    keccak256(
-                        abi.encode(
-                            address(this),
-                            TradeType.RESPONSE,
-                            subjectId,
-                            tradeId
-                        )
-                    )
+                encodeTokenId(
+                    address(this),
+                    TradeType.RESPONSE,
+                    uint40(subjectId),
+                    0
+                ),
+                1
+            );
+
+            // Mint receipt token for future `claim()`.
+            _mint(
+                t.from,
+                encodeTokenId(
+                    address(this),
+                    TradeType.RESPONSE,
+                    uint40(subjectId),
+                    uint40(tradeId)
                 ),
                 1
             );
@@ -395,18 +404,26 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
             // Aprove trade.
             t.approved = true;
 
-            // Mint receipt for future `claim()`.
+            // Mint engagement token for future utility.
+            _mint(
+                t.from,
+                encodeTokenId(
+                    address(this),
+                    TradeType.RESPONSE,
+                    uint40(subjectId),
+                    0
+                ),
+                1
+            );
+
+            // Mint receipt token for future `claim()`.
             _mint(
                 r.from,
-                uint256(
-                    keccak256(
-                        abi.encode(
-                            address(this),
-                            TradeType.EXCHANGE,
-                            subjectId,
-                            tradeId
-                        )
-                    )
+                encodeTokenId(
+                    address(this),
+                    TradeType.EXCHANGE,
+                    uint40(subjectId),
+                    uint40(tradeId)
                 ),
                 1
             );
@@ -416,7 +433,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     }
 
     // Update creditLimitToAddRequest or creditLimitToAddResource
-    function updateCreditLimitToAdd(
+    function updateCreditLimitToPost(
         uint256 req,
         uint256 res
     ) external onlyOwnerOrRoles(AGENT) {
@@ -433,11 +450,12 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         uint256 subjectId,
         uint256 tradeId
     ) external {
-        uint256 id = uint256(
-            keccak256(abi.encode(address(this), tradeType, subjectId, tradeId))
+        uint256 id = encodeTokenId(
+            address(this),
+            tradeType,
+            uint40(subjectId),
+            uint40(tradeId)
         );
-
-        console.log(id);
 
         if (balanceOf(msg.sender, id) == 0) revert Unauthorized();
 
@@ -454,6 +472,14 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
 
         delete t.currency;
         delete t.amount;
+    }
+
+    function tokenURI(uint256 id) public view override returns (string memory) {
+        (, TradeType tradeType, uint40 subjectId, ) = decodeTokenId(id);
+        return
+            (tradeType == TradeType.RESPONSE)
+                ? requests[subjectId].uri
+                : resources[subjectId].uri;
     }
 
     /* -------------------------------------------------------------------------- */
@@ -506,6 +532,16 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         else {}
     }
 
+    function _beforeTokenTransfer(
+        address,
+        address,
+        uint256 id,
+        uint256
+    ) internal pure override {
+        (, , uint40 subjectId, uint40 tradeId) = decodeTokenId(id);
+        if (subjectId > 0 && tradeId == 0) revert InvalidTransfer();
+    }
+
     /* -------------------------------------------------------------------------- */
     /*                                  Helpers.                                  */
     /* -------------------------------------------------------------------------- */
@@ -526,6 +562,45 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
             id := asset
             bulletin := shr(96, asset)
         }
+    }
+
+    // Encode bulletin address and ask/resource id as asset.
+    function encodeTokenId(
+        address bulletin,
+        TradeType tradeType,
+        uint40 subjectId,
+        uint40 tradeId
+    ) public pure returns (uint256) {
+        return
+            uint256(
+                bytes32(
+                    abi.encodePacked(bulletin, tradeType, subjectId, tradeId)
+                )
+            );
+    }
+
+    // Decode asset as bulletin address and ask/resource id.
+    function decodeTokenId(
+        uint256 id
+    )
+        public
+        pure
+        returns (
+            address bulletin,
+            TradeType tradeType,
+            uint40 subjectId,
+            uint40 tradeId
+        )
+    {
+        uint8 tt;
+        assembly {
+            tradeId := shr(8, id)
+            subjectId := shr(48, id)
+            tt := shr(88, id)
+            bulletin := shr(96, id)
+        }
+
+        tradeType = TradeType(tt);
     }
 
     /* -------------------------------------------------------------------------- */

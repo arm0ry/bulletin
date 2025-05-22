@@ -29,6 +29,7 @@ interface IBulletin {
         address currency;
         uint256 drop;
         bytes data;
+        string uri;
     }
 
     /**
@@ -38,6 +39,7 @@ interface IBulletin {
         address from;
         // uint48 supply;
         bytes data; // title, detail
+        string uri;
     }
 
     /**
@@ -70,6 +72,7 @@ interface IBulletin {
     error Denounced();
     error DropRequired();
     error InvalidTrade();
+    error InvalidTransfer();
     error NotYetActivated();
     error NotOriginalPoster();
 

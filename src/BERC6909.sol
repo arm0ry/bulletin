@@ -120,7 +120,7 @@ abstract contract BERC6909 {
     // }
 
     /// @dev Returns the Uniform Resource Identifier (URI) for token `id`.
-    // function tokenURI(uint256 id) public view virtual returns (string memory);
+    function tokenURI(uint256 id) public view virtual returns (string memory);
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                          ERC6909                           */
@@ -183,7 +183,7 @@ abstract contract BERC6909 {
         uint256 id,
         uint256 amount
     ) public payable virtual returns (bool) {
-        // _beforeTokenTransfer(msg.sender, to, id, amount);
+        _beforeTokenTransfer(msg.sender, to, id, amount);
         /// @solidity memory-safe-assembly
         assembly {
             /// Compute the balance slot and load its value.
@@ -244,7 +244,7 @@ abstract contract BERC6909 {
         uint256 id,
         uint256 amount
     ) public payable virtual returns (bool) {
-        // _beforeTokenTransfer(from, to, id, amount);
+        _beforeTokenTransfer(from, to, id, amount);
         /// @solidity memory-safe-assembly
         assembly {
             // Compute the operator slot and load its value.
@@ -428,7 +428,7 @@ abstract contract BERC6909 {
     ///
     /// Emits a {Transfer} event.
     function _burn(address from, uint256 id, uint256 amount) internal virtual {
-        // _beforeTokenTransfer(from, address(0), id, amount);
+        _beforeTokenTransfer(from, address(0), id, amount);
         /// @solidity memory-safe-assembly
         assembly {
             // Compute the balance slot.
@@ -477,7 +477,7 @@ abstract contract BERC6909 {
         uint256 id,
         uint256 amount
     ) internal virtual {
-        // _beforeTokenTransfer(from, to, id, amount);
+        _beforeTokenTransfer(from, to, id, amount);
         /// @solidity memory-safe-assembly
         assembly {
             let bitmaskAddress := 0xffffffffffffffffffffffffffffffffffffffff
@@ -616,13 +616,12 @@ abstract contract BERC6909 {
 
     /// @dev Hook that is called before any transfer of tokens.
     /// This includes minting and burning.
-    // function _beforeTokenTransfer(
-    //     address from,
-    //     address to,
-    //     uint256 id,
-    //     uint256 amount
-    // ) internal virtual {
-    // }
+    function _beforeTokenTransfer(
+        address from,
+        address to,
+        uint256 id,
+        uint256 amount
+    ) internal virtual {}
 
     /// @dev Hook that is called after any transfer of tokens.
     /// This includes minting and burning.
