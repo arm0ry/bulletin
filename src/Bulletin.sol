@@ -129,6 +129,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
             // Modify previous `Request`.
             Request storage r = requests[id];
             (bytes(_r.data).length > 0) ? r.data = _r.data : r.data;
+            (bytes(_r.uri).length > 0) ? r.uri = _r.uri : r.uri;
 
             // Refund.
             if (r.drop != 0) refund(r.from, r.currency, r.drop);
@@ -174,6 +175,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
 
             (_r.from != address(0)) ? r.from = _r.from : r.from;
             (bytes(_r.data).length > 0) ? r.data = _r.data : r.data;
+            (bytes(_r.uri).length > 0) ? r.uri = _r.uri : r.uri;
         } else {
             // Add new resource.
             if (!isAgent)
@@ -212,7 +214,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         uint256 subjectId,
         Trade calldata _t
     ) internal {
-        if (_t.resource != 0) {
+        if (_t.resource != 0 && _t.currency != address(0xbeef)) {
             (address c, uint256 id) = decodeAsset(_t.resource);
             Resource memory r = IBulletin(c).getResource(id);
             if (r.from != _t.from) revert NotOriginalPoster();
@@ -427,6 +429,17 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
                 ),
                 1
             );
+            // Mint counter receipt token to future `claim()`.
+            _mint(
+                t.from,
+                encodeTokenId(
+                    address(this),
+                    TradeType.EXCHANGE,
+                    uint40(subjectId),
+                    uint40(tradeId)
+                ),
+                1
+            );
 
             emit TradeUpdated(TradeType.EXCHANGE, subjectId, tradeId);
         } else revert Approved();
@@ -442,9 +455,10 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     }
 
     /* -------------------------------------------------------------------------- */
-    /*                                   Claim.                                   */
+    /*                           Post-trade Engagement.                           */
     /* -------------------------------------------------------------------------- */
 
+    // TODO:
     function claim(
         TradeType tradeType,
         uint256 subjectId,
@@ -473,6 +487,13 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         delete t.currency;
         delete t.amount;
     }
+
+    // TODO:
+    function dispute(
+        TradeType tradeType,
+        uint256 subjectId,
+        uint256 tradeId
+    ) external {}
 
     function tokenURI(uint256 id) public view override returns (string memory) {
         (, TradeType tradeType, uint40 subjectId, ) = decodeTokenId(id);
