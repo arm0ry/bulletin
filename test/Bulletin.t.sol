@@ -234,7 +234,9 @@ contract BulletinTest is Test {
     ) public payable returns (uint256 id) {
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
+            paused: false,
             from: user,
+            timestamp: uint40(block.timestamp),
             resource: bulletin.encodeAsset(
                 address(userBulletin),
                 uint96(userResourceId)
@@ -256,7 +258,9 @@ contract BulletinTest is Test {
         bytes32 r;
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
+            paused: false,
             from: user,
+            timestamp: uint40(block.timestamp),
             resource: r,
             currency: address(0),
             amount: 0,
@@ -275,7 +279,9 @@ contract BulletinTest is Test {
         bytes32 r;
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
+            paused: false,
             from: user,
+            timestamp: uint40(block.timestamp),
             resource: r,
             currency: address(0),
             amount: 0,
@@ -294,7 +300,9 @@ contract BulletinTest is Test {
     ) public payable returns (uint256 id) {
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
+            paused: false,
             from: user,
+            timestamp: uint40(block.timestamp),
             resource: bulletin.encodeAsset(
                 address(userBulletin),
                 uint96(userResourceId)
@@ -317,7 +325,9 @@ contract BulletinTest is Test {
     ) public payable returns (uint256 id) {
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
+            paused: false,
             from: user,
+            timestamp: uint40(block.timestamp),
             resource: bulletin.encodeAsset(
                 address(userBulletin),
                 uint96(userResourceId)
@@ -339,7 +349,9 @@ contract BulletinTest is Test {
     ) public payable returns (uint256 id) {
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
+            paused: false,
             from: user,
+            timestamp: uint40(block.timestamp),
             resource: bytes32(0),
             currency: address(0xc0d),
             amount: amount,
@@ -359,7 +371,9 @@ contract BulletinTest is Test {
     ) public payable returns (uint256 id) {
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
+            paused: false,
             from: user,
+            timestamp: uint40(block.timestamp),
             resource: bytes32(0),
             currency: address(0xbeef),
             amount: amount,
@@ -383,7 +397,9 @@ contract BulletinTest is Test {
         bytes32 r;
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
+            paused: false,
             from: user,
+            timestamp: uint40(block.timestamp),
             resource: r,
             currency: currency,
             amount: amount,
@@ -404,7 +420,9 @@ contract BulletinTest is Test {
         bytes32 r;
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
+            paused: false,
             from: user,
+            timestamp: uint40(block.timestamp),
             resource: r,
             currency: currency,
             amount: amount,
@@ -446,7 +464,7 @@ contract BulletinTest is Test {
         uint256 exchangeId
     ) public payable {
         vm.prank(op);
-        bulletin.approveExchange(resourceId, exchangeId);
+        bulletin.approveExchange(resourceId, exchangeId, type(uint40).max);
     }
 
     function withdrawExchange(

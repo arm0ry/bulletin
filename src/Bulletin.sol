@@ -269,11 +269,10 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
                 t.amount = _t.amount;
 
                 // Store `block.timestamp` when staking, otherwise store resource hash as supplied.
-                (_t.currency == address(0xbeef))
-                    ? t.resource = bytes32(block.timestamp)
-                    : (_t.resource > 0)
-                        ? t.resource = _t.resource
-                        : t.resource;
+                if (_t.currency == address(0xbeef))
+                    t.timestamp = uint40(block.timestamp);
+                else if (_t.resource > 0) t.resource = _t.resource;
+                else t.resource;
             }
         }
 
@@ -362,6 +361,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
             // Update `t.currency` and `t.amount` and mint receipt for future `claim()`.
             t.currency = r.currency;
             t.amount = amount;
+            t.timestamp = uint40(block.timestamp);
 
             // Mint engagement token for future utility.
             _mint(
@@ -395,7 +395,8 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     // Approving staking trades is not allowed for staking does not transfer currency or credit
     function approveExchange(
         uint256 subjectId,
-        uint256 tradeId
+        uint256 tradeId,
+        uint40 deadline
     ) external denounced {
         Resource storage r = resources[subjectId];
         if (r.from != msg.sender) revert NotOriginalPoster();
@@ -405,6 +406,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         if (!t.approved) {
             // Aprove trade.
             t.approved = true;
+            t.timestamp = deadline;
 
             // Mint engagement token for future utility.
             _mint(
@@ -458,12 +460,29 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     /*                           Post-trade Engagement.                           */
     /* -------------------------------------------------------------------------- */
 
+    function access(uint256 subjectId, uint256 tradeId) external {
+        uint256 id = encodeTokenId(
+            address(this),
+            TradeType.EXCHANGE,
+            uint40(subjectId),
+            uint40(tradeId)
+        );
+
+        if (balanceOf(msg.sender, id) == 0) revert Unauthorized();
+
+        Trade storage t = exchangesPerResource[subjectId][tradeId];
+        if (t.approved && !t.paused && t.timestamp > uint40(block.timestamp)) {
+            // TODO: allow access
+            emit Accessed(subjectId, tradeId);
+        } else revert Denied();
+    }
+
     // TODO:
     function claim(
         TradeType tradeType,
         uint256 subjectId,
         uint256 tradeId
-    ) external {
+    ) public {
         uint256 id = encodeTokenId(
             address(this),
             tradeType,
@@ -473,27 +492,46 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
 
         if (balanceOf(msg.sender, id) == 0) revert Unauthorized();
 
-        // Burn token.
-        _burn(msg.sender, id, 1);
-
         Trade storage t;
         (tradeType == TradeType.RESPONSE)
             ? t = responsesPerRequest[subjectId][tradeId]
             : t = exchangesPerResource[subjectId][tradeId];
 
-        // Distribute.
-        route(t.currency, address(this), msg.sender, t.amount);
+        if (
+            !t.paused &&
+            t.timestamp > 0 &&
+            uint40(block.timestamp) > t.timestamp
+        ) {
+            // TODO: claim streamed payment
+            // TODO: deduct streamed payment from `t.amount`
+            // Distribute.
+            route(t.currency, address(this), msg.sender, t.amount);
 
-        delete t.currency;
-        delete t.amount;
+            // Burn token.
+            if (t.amount == 0) _burn(msg.sender, id, 1);
+        } else revert Denied();
     }
 
     // TODO:
     function dispute(
         TradeType tradeType,
         uint256 subjectId,
-        uint256 tradeId
-    ) external {}
+        uint256 tradeId,
+        bytes memory data
+    ) external {
+        uint256 id = encodeTokenId(
+            address(this),
+            tradeType,
+            uint40(subjectId),
+            uint40(tradeId)
+        );
+
+        // TODO: claim streamed payment
+        // TODO: deduct streamed payment from `t.amount`
+
+        // TODO: calculate remainder time for payment streaming
+        // TODO: store remainder time to `t.timestamp`
+    }
 
     function tokenURI(uint256 id) public view override returns (string memory) {
         (, TradeType tradeType, uint40 subjectId, ) = decodeTokenId(id);
