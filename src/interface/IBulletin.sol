@@ -47,9 +47,10 @@ interface IBulletin {
      */
     struct Trade {
         bool approved;
-        bool paused;
-        address from;
+        bool inDispute; // todo: change to disputed
         uint40 timestamp; // reserved for `access()` and `claim()`
+        uint40 duration;
+        address from;
         bytes32 resource;
         address currency; // `0xbeef` reserved for staking, `address(0)` reserved for credit uses
         uint256 amount;

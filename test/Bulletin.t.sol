@@ -234,9 +234,10 @@ contract BulletinTest is Test {
     ) public payable returns (uint256 id) {
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
-            paused: false,
-            from: user,
+            inDispute: false,
             timestamp: uint40(block.timestamp),
+            duration: 2 weeks,
+            from: user,
             resource: bulletin.encodeAsset(
                 address(userBulletin),
                 uint96(userResourceId)
@@ -258,9 +259,10 @@ contract BulletinTest is Test {
         bytes32 r;
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
-            paused: false,
-            from: user,
+            inDispute: false,
             timestamp: uint40(block.timestamp),
+            duration: 2 weeks,
+            from: user,
             resource: r,
             currency: address(0),
             amount: 0,
@@ -279,9 +281,10 @@ contract BulletinTest is Test {
         bytes32 r;
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
-            paused: false,
-            from: user,
+            inDispute: false,
             timestamp: uint40(block.timestamp),
+            duration: 2 weeks,
+            from: user,
             resource: r,
             currency: address(0),
             amount: 0,
@@ -300,9 +303,10 @@ contract BulletinTest is Test {
     ) public payable returns (uint256 id) {
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
-            paused: false,
-            from: user,
+            inDispute: false,
             timestamp: uint40(block.timestamp),
+            duration: 2 weeks,
+            from: user,
             resource: bulletin.encodeAsset(
                 address(userBulletin),
                 uint96(userResourceId)
@@ -325,9 +329,10 @@ contract BulletinTest is Test {
     ) public payable returns (uint256 id) {
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
-            paused: false,
-            from: user,
+            inDispute: false,
             timestamp: uint40(block.timestamp),
+            duration: 2 weeks,
+            from: user,
             resource: bulletin.encodeAsset(
                 address(userBulletin),
                 uint96(userResourceId)
@@ -349,9 +354,10 @@ contract BulletinTest is Test {
     ) public payable returns (uint256 id) {
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
-            paused: false,
-            from: user,
+            inDispute: false,
             timestamp: uint40(block.timestamp),
+            duration: 2 weeks,
+            from: user,
             resource: bytes32(0),
             currency: address(0xc0d),
             amount: amount,
@@ -371,9 +377,10 @@ contract BulletinTest is Test {
     ) public payable returns (uint256 id) {
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
-            paused: false,
-            from: user,
+            inDispute: false,
             timestamp: uint40(block.timestamp),
+            duration: 2 weeks,
+            from: user,
             resource: bytes32(0),
             currency: address(0xbeef),
             amount: amount,
@@ -397,9 +404,10 @@ contract BulletinTest is Test {
         bytes32 r;
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
-            paused: false,
-            from: user,
+            inDispute: false,
             timestamp: uint40(block.timestamp),
+            duration: 2 weeks,
+            from: user,
             resource: r,
             currency: currency,
             amount: amount,
@@ -420,9 +428,10 @@ contract BulletinTest is Test {
         bytes32 r;
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
-            paused: false,
-            from: user,
+            inDispute: false,
             timestamp: uint40(block.timestamp),
+            duration: 2 weeks,
+            from: user,
             resource: r,
             currency: currency,
             amount: amount,
