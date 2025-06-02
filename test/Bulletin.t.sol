@@ -234,7 +234,7 @@ contract BulletinTest is Test {
     ) public payable returns (uint256 id) {
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
-            inDispute: false,
+            paused: false,
             timestamp: uint40(block.timestamp),
             duration: 2 weeks,
             from: user,
@@ -259,7 +259,7 @@ contract BulletinTest is Test {
         bytes32 r;
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
-            inDispute: false,
+            paused: false,
             timestamp: uint40(block.timestamp),
             duration: 2 weeks,
             from: user,
@@ -281,7 +281,7 @@ contract BulletinTest is Test {
         bytes32 r;
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
-            inDispute: false,
+            paused: false,
             timestamp: uint40(block.timestamp),
             duration: 2 weeks,
             from: user,
@@ -303,7 +303,7 @@ contract BulletinTest is Test {
     ) public payable returns (uint256 id) {
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
-            inDispute: false,
+            paused: false,
             timestamp: uint40(block.timestamp),
             duration: 2 weeks,
             from: user,
@@ -329,7 +329,7 @@ contract BulletinTest is Test {
     ) public payable returns (uint256 id) {
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
-            inDispute: false,
+            paused: false,
             timestamp: uint40(block.timestamp),
             duration: 2 weeks,
             from: user,
@@ -354,7 +354,7 @@ contract BulletinTest is Test {
     ) public payable returns (uint256 id) {
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
-            inDispute: false,
+            paused: false,
             timestamp: uint40(block.timestamp),
             duration: 2 weeks,
             from: user,
@@ -377,7 +377,7 @@ contract BulletinTest is Test {
     ) public payable returns (uint256 id) {
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
-            inDispute: false,
+            paused: false,
             timestamp: uint40(block.timestamp),
             duration: 2 weeks,
             from: user,
@@ -404,7 +404,7 @@ contract BulletinTest is Test {
         bytes32 r;
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
-            inDispute: false,
+            paused: false,
             timestamp: uint40(block.timestamp),
             duration: 2 weeks,
             from: user,
@@ -428,7 +428,7 @@ contract BulletinTest is Test {
         bytes32 r;
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
-            inDispute: false,
+            paused: false,
             timestamp: uint40(block.timestamp),
             duration: 2 weeks,
             from: user,

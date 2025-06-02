@@ -47,7 +47,7 @@ interface IBulletin {
      */
     struct Trade {
         bool approved;
-        bool inDispute; // todo: change to disputed
+        bool paused;
         uint40 timestamp; // reserved for `access()` and `claim()`
         uint40 duration;
         address from;
@@ -75,6 +75,7 @@ interface IBulletin {
     error Approved();
     error Activated();
     error Denounced();
+
     error DropRequired();
     error InvalidTrade();
     error InvalidTransfer();
