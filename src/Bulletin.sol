@@ -556,7 +556,6 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         }
     }
 
-    // TODO
     function pause(uint256 subjectId, uint256 tradeId) external denounced {
         uint256 id = encodeTokenId(
             address(this),
@@ -575,12 +574,12 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         if (!t.paused) {
             t.paused = true;
 
-            // Limit intiator access to `access()`, `claim()` and `dispute()`.
+            // Limit intiator's access to `access()`, `claim()` and `pause()` supplied trade.
             _burn(msg.sender, id, 1);
 
             // Limit user access if `msg.sender` is owner of resource.
             if (msg.sender == r.from) {
-                // Limit access to user.
+                // Limit user's access to resource.
                 _burn(t.from, id, 1);
             }
 
