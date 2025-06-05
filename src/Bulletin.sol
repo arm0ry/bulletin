@@ -5,18 +5,19 @@ import {IBulletin} from "src/interface/IBulletin.sol";
 import {OwnableRoles} from "src/auth/OwnableRoles.sol";
 import {SafeTransferLib} from "lib/solady/src/utils/SafeTransferLib.sol";
 import {IERC20} from "src/interface/IERC20.sol";
+import {BERC6909} from "src/BERC6909.sol";
 
 import {console} from "lib/forge-std/src/console.sol";
 
 /// @title Bulletin
 /// @notice A system to store and interact with requests and resources.
 /// @author audsssy.eth
-contract Bulletin is OwnableRoles, IBulletin {
+contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     /* -------------------------------------------------------------------------- */
     /*                                   Roles.                                   */
     /* -------------------------------------------------------------------------- */
 
-    // `Agents` assist with activating credit limits and facilitating coordination.
+    // `Agent` assist with activating credit limits and facilitating coordination.
     uint8 internal constant AGENT = 1 << 0;
 
     // `Denounced` has restricted access to Bulltin.
@@ -28,8 +29,8 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     uint40 public requestId;
     uint40 public resourceId;
-    uint256 public reqThreshold;
-    uint256 public resThreshold;
+    uint256 public creditLimitToAddRequest;
+    uint256 public creditLimitToAddResource;
 
     // Mappings by user.
     mapping(address => Credit) internal credits;
@@ -107,7 +108,6 @@ contract Bulletin is OwnableRoles, IBulletin {
         _request(id, _r);
     }
 
-    // TODO: `requestBySig`
     // Post or update a `Request` by Agent
     function requestByAgents(
         uint256 id,
@@ -118,7 +118,8 @@ contract Bulletin is OwnableRoles, IBulletin {
 
     function _request(uint256 id, Request calldata _r) internal {
         // Address with credit balance above a credit limit threshold may post `Request`.
-        if (reqThreshold > credits[_r.from].limit) revert Unauthorized();
+        if (creditLimitToAddRequest > credits[_r.from].limit)
+            revert Unauthorized();
 
         // Deposit.
         if (_r.drop == 0) revert DropRequired();
@@ -128,6 +129,7 @@ contract Bulletin is OwnableRoles, IBulletin {
             // Modify previous `Request`.
             Request storage r = requests[id];
             (bytes(_r.data).length > 0) ? r.data = _r.data : r.data;
+            (bytes(_r.uri).length > 0) ? r.uri = _r.uri : r.uri;
 
             // Refund.
             if (r.drop != 0) refund(r.from, r.currency, r.drop);
@@ -149,7 +151,6 @@ contract Bulletin is OwnableRoles, IBulletin {
         _resource(false, id, _r);
     }
 
-    // TODO: `resourceBySig`
     // Post or update a `Resource` by Agent.
     function resourceByAgents(
         uint256 id,
@@ -164,7 +165,8 @@ contract Bulletin is OwnableRoles, IBulletin {
         Resource calldata _r
     ) internal {
         // Address with credit balance above a credit limit threshold may post `Resource`.
-        if (resThreshold > credits[_r.from].limit) revert Unauthorized();
+        if (creditLimitToAddResource > credits[_r.from].limit)
+            revert Unauthorized();
 
         if (id != 0) {
             Resource storage r = resources[id];
@@ -173,6 +175,7 @@ contract Bulletin is OwnableRoles, IBulletin {
 
             (_r.from != address(0)) ? r.from = _r.from : r.from;
             (bytes(_r.data).length > 0) ? r.data = _r.data : r.data;
+            (bytes(_r.uri).length > 0) ? r.uri = _r.uri : r.uri;
         } else {
             // Add new resource.
             if (!isAgent)
@@ -206,13 +209,12 @@ contract Bulletin is OwnableRoles, IBulletin {
         _trade(tradeType, subjectId, _t);
     }
 
-    // TODO: `tradeBySig`
     function _trade(
         TradeType tradeType,
         uint256 subjectId,
         Trade calldata _t
     ) internal {
-        if (_t.resource != 0) {
+        if (_t.resource != 0 && _t.currency != address(0xbeef)) {
             (address c, uint256 id) = decodeAsset(_t.resource);
             Resource memory r = IBulletin(c).getResource(id);
             if (r.from != _t.from) revert NotOriginalPoster();
@@ -250,7 +252,7 @@ contract Bulletin is OwnableRoles, IBulletin {
 
                 // Update.
                 t.amount = _t.amount;
-                t.resource = bytes32(block.timestamp);
+                t.timestamp = uint40(block.timestamp);
             } else {
                 // Add a non-staking or staking trade.
                 t = (tradeType == TradeType.RESPONSE)
@@ -267,11 +269,10 @@ contract Bulletin is OwnableRoles, IBulletin {
                 t.amount = _t.amount;
 
                 // Store `block.timestamp` when staking, otherwise store resource hash as supplied.
-                (_t.currency == address(0xbeef))
-                    ? t.resource = bytes32(block.timestamp)
-                    : (_t.resource > 0)
-                        ? t.resource = _t.resource
-                        : t.resource;
+                if (_t.currency == address(0xbeef))
+                    t.timestamp = uint40(block.timestamp);
+                else if (_t.resource > 0) t.resource = _t.resource;
+                else t.resource;
             }
         }
 
@@ -354,10 +355,36 @@ contract Bulletin is OwnableRoles, IBulletin {
             // Confirm amount is sufficient.
             if (amount != 0) r.drop -= amount;
 
-            // Distribute payment.
-            (r.currency == address(0xc0d))
-                ? build(t.from, amount)
-                : route(r.currency, address(this), t.from, amount);
+            // Accept currency amount, if any.
+            route(t.currency, address(0), r.from, t.amount);
+
+            // Update `t.currency` and `t.amount` for counterparty to `claim()` in the future.
+            t.currency = r.currency;
+            t.amount = amount;
+
+            // Mint engagement token for future utility.
+            _mint(
+                t.from,
+                encodeTokenId(
+                    address(this),
+                    TradeType.RESPONSE,
+                    uint40(subjectId),
+                    0
+                ),
+                1
+            );
+
+            // Mint credit token to user for future `access()`, `dispute()`, and tranfsers.
+            _mint(
+                t.from,
+                encodeTokenId(
+                    address(this),
+                    TradeType.RESPONSE,
+                    uint40(subjectId),
+                    uint40(tradeId)
+                ),
+                1
+            );
 
             emit TradeUpdated(TradeType.RESPONSE, subjectId, tradeId);
         } else revert Approved();
@@ -367,7 +394,8 @@ contract Bulletin is OwnableRoles, IBulletin {
     // Approving staking trades is not allowed for staking does not transfer currency or credit
     function approveExchange(
         uint256 subjectId,
-        uint256 tradeId
+        uint256 tradeId,
+        uint40 duration
     ) external denounced {
         Resource storage r = resources[subjectId];
         if (r.from != msg.sender) revert NotOriginalPoster();
@@ -377,24 +405,221 @@ contract Bulletin is OwnableRoles, IBulletin {
         if (!t.approved) {
             // Aprove trade.
             t.approved = true;
+            t.timestamp = uint40(block.timestamp);
+            t.duration = duration;
 
-            // Accept payment.
-            if (t.currency == address(0xc0d)) build(r.from, t.amount);
-            else if (t.currency != address(0))
-                route(t.currency, address(this), r.from, t.amount);
-            else {}
+            // Mint engagement token for future utility.
+            _mint(
+                t.from,
+                encodeTokenId(
+                    address(this),
+                    TradeType.RESPONSE,
+                    uint40(subjectId),
+                    0
+                ),
+                1
+            );
+
+            // Mint credit token to `r.from` for future `claim()`, `dispute()`, and transfers().
+            _mint(
+                r.from,
+                encodeTokenId(
+                    address(this),
+                    TradeType.EXCHANGE,
+                    uint40(subjectId),
+                    uint40(tradeId)
+                ),
+                1
+            );
+            // Mint credit token to user for future `claim()` and transfers.
+            _mint(
+                t.from,
+                encodeTokenId(
+                    address(this),
+                    TradeType.EXCHANGE,
+                    uint40(subjectId),
+                    uint40(tradeId)
+                ),
+                1
+            );
 
             emit TradeUpdated(TradeType.EXCHANGE, subjectId, tradeId);
         } else revert Approved();
     }
 
-    // Update reqThreshold or resThreshold
-    function updateThreshold(
+    // Update creditLimitToAddRequest or creditLimitToAddResource
+    function updateCreditLimitToPost(
         uint256 req,
         uint256 res
     ) external onlyOwnerOrRoles(AGENT) {
-        reqThreshold = req;
-        resThreshold = res;
+        creditLimitToAddRequest = req;
+        creditLimitToAddResource = res;
+    }
+
+    /* -------------------------------------------------------------------------- */
+    /*                           Post-trade Engagement.                           */
+    /* -------------------------------------------------------------------------- */
+
+    function access(uint256 subjectId, uint256 tradeId) external {
+        uint256 id = encodeTokenId(
+            address(this),
+            TradeType.EXCHANGE,
+            uint40(subjectId),
+            uint40(tradeId)
+        );
+
+        if (balanceOf(msg.sender, id) == 0) revert Unauthorized();
+
+        Trade storage t = exchangesPerResource[subjectId][tradeId];
+        if (
+            t.approved &&
+            !t.paused &&
+            t.timestamp + t.duration >= uint40(block.timestamp)
+        ) {
+            // TODO: allow access
+            emit Accessed(subjectId, tradeId);
+        } else revert Denied();
+    }
+
+    function claim(
+        TradeType tradeType,
+        uint256 subjectId,
+        uint256 tradeId
+    ) public {
+        uint256 id = encodeTokenId(
+            address(this),
+            tradeType,
+            uint40(subjectId),
+            uint40(tradeId)
+        );
+        if (balanceOf(msg.sender, id) == 0) revert Unauthorized();
+
+        Trade storage t;
+        (tradeType == TradeType.RESPONSE)
+            ? t = responsesPerRequest[subjectId][tradeId]
+            : t = exchangesPerResource[subjectId][tradeId];
+        if (t.currency == address(0xbeef)) revert InvalidTrade();
+
+        unchecked {
+            // When trade is approved and not in dispute, `t.amount` becomes claimable.
+            if (t.approved && !t.paused) {
+                // When `t.timestamp` is not set (ie, claim bounty) or when a trade reaches
+                // past deadline, `msg.sender` may claim `t.amount` in full.
+                if (t.timestamp == 0) {
+                    // Burn token.
+                    Request storage r = requests[subjectId];
+                    _burn(r.from, id, 1);
+                    _burn(msg.sender, id, 1);
+
+                    // Distribute.
+                    route(t.currency, address(this), msg.sender, t.amount);
+                    delete t.amount;
+                } else if (uint40(block.timestamp) > t.timestamp + t.duration) {
+                    // Burn token.
+                    _burn(msg.sender, id, 1);
+                    _burn(t.from, id, 1);
+
+                    // Distribute.
+                    route(t.currency, address(this), msg.sender, t.amount);
+                    delete t.amount;
+                } else if (
+                    t.timestamp + t.duration >= uint40(block.timestamp)
+                ) {
+                    // Otherwise, `msg.sender` may claim streamed `t.amount` by the second.
+                    uint40 timeStreamed = uint40(block.timestamp) - t.timestamp;
+                    uint256 amountStreamed = ((t.amount * timeStreamed) /
+                        t.duration) * 100;
+
+                    // Update timestamp and amount for future `claim()`.
+                    if (1 gwei > t.amount - amountStreamed) {
+                        // Burn token.
+                        _burn(msg.sender, id, 1);
+                        _burn(t.from, id, 1);
+
+                        amountStreamed = t.amount;
+                        delete t.amount;
+                    } else t.amount -= amountStreamed;
+                    (t.duration > timeStreamed)
+                        ? t.duration -= timeStreamed
+                        : t.duration = 0;
+                    t.timestamp = uint40(block.timestamp);
+
+                    // Distribute.
+                    route(
+                        t.currency,
+                        address(this),
+                        msg.sender,
+                        amountStreamed
+                    );
+                } else {}
+            } else revert Denied();
+        }
+    }
+
+    function pause(uint256 subjectId, uint256 tradeId) external denounced {
+        uint256 id = encodeTokenId(
+            address(this),
+            TradeType.EXCHANGE,
+            uint40(subjectId),
+            uint40(tradeId)
+        );
+
+        Trade storage t = exchangesPerResource[subjectId][tradeId];
+        Resource storage r = resources[subjectId];
+
+        if (balanceOf(msg.sender, id) == 0) revert Unauthorized();
+        if (t.currency == address(0xbeef)) revert InvalidTrade();
+
+        // Initiate dispute resolution.
+        if (!t.paused) {
+            t.paused = true;
+
+            // Limit intiator's access to `access()`, `claim()` and `pause()` supplied trade.
+            _burn(msg.sender, id, 1);
+
+            // Limit user access if `msg.sender` is owner of resource.
+            if (msg.sender == r.from) {
+                // Limit user's access to resource.
+                _burn(t.from, id, 1);
+            }
+
+            // Calculate streamed amount and update `t.amount`.
+            uint40 timeStreamed = uint40(block.timestamp) - t.timestamp;
+            uint256 amountStreamed = ((t.amount * timeStreamed) / t.duration) *
+                100;
+
+            // Update amount for future `claim()`.
+            if (1 gwei > t.amount - amountStreamed) {
+                amountStreamed = t.amount;
+                delete t.amount;
+            } else t.amount -= amountStreamed;
+
+            // Update `t.duration`.
+            (t.duration > timeStreamed)
+                ? t.duration -= timeStreamed
+                : t.duration = 0;
+
+            // Distribute streamed `t.amount` up to `block.timestamp`.
+            route(t.currency, address(this), r.from, amountStreamed);
+        } else {
+            t.paused = false;
+
+            // If `t.duration` remains, mint tokens to user for future use.
+            if (t.duration != 0) {
+                t.timestamp = uint40(block.timestamp);
+                _mint(t.from, id, 1);
+            }
+
+            if (msg.sender == r.from) _mint(r.from, id, 1);
+        }
+    }
+
+    function tokenURI(uint256 id) public view override returns (string memory) {
+        (, TradeType tradeType, uint40 subjectId, ) = decodeTokenId(id);
+        return
+            (tradeType == TradeType.RESPONSE)
+                ? requests[subjectId].uri
+                : resources[subjectId].uri;
     }
 
     /* -------------------------------------------------------------------------- */
@@ -408,9 +633,12 @@ contract Bulletin is OwnableRoles, IBulletin {
         address to,
         uint256 amount
     ) internal {
-        (from == address(this))
-            ? SafeTransferLib.safeTransfer(currency, to, amount)
-            : SafeTransferLib.safeTransferFrom(currency, from, to, amount);
+        if (currency == address(0xc0d)) build(to, amount);
+        else if (currency != address(0))
+            (from == address(this))
+                ? SafeTransferLib.safeTransfer(currency, to, amount)
+                : SafeTransferLib.safeTransferFrom(currency, from, to, amount);
+        else return;
     }
 
     // Build credit.
@@ -444,6 +672,16 @@ contract Bulletin is OwnableRoles, IBulletin {
         else {}
     }
 
+    function _beforeTokenTransfer(
+        address,
+        address,
+        uint256 id,
+        uint256
+    ) internal pure override {
+        (, , uint40 subjectId, uint40 tradeId) = decodeTokenId(id);
+        if (subjectId > 0 && tradeId == 0) revert InvalidTransfer();
+    }
+
     /* -------------------------------------------------------------------------- */
     /*                                  Helpers.                                  */
     /* -------------------------------------------------------------------------- */
@@ -464,6 +702,45 @@ contract Bulletin is OwnableRoles, IBulletin {
             id := asset
             bulletin := shr(96, asset)
         }
+    }
+
+    // Encode bulletin address and ask/resource id as asset.
+    function encodeTokenId(
+        address bulletin,
+        TradeType tradeType,
+        uint40 subjectId,
+        uint40 tradeId
+    ) public pure returns (uint256) {
+        return
+            uint256(
+                bytes32(
+                    abi.encodePacked(bulletin, tradeType, subjectId, tradeId)
+                )
+            );
+    }
+
+    // Decode asset as bulletin address and ask/resource id.
+    function decodeTokenId(
+        uint256 id
+    )
+        public
+        pure
+        returns (
+            address bulletin,
+            TradeType tradeType,
+            uint40 subjectId,
+            uint40 tradeId
+        )
+    {
+        uint8 tt;
+        assembly {
+            tradeId := shr(8, id)
+            subjectId := shr(48, id)
+            tt := shr(88, id)
+            bulletin := shr(96, id)
+        }
+
+        tradeType = TradeType(tt);
     }
 
     /* -------------------------------------------------------------------------- */

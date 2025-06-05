@@ -29,6 +29,7 @@ interface IBulletin {
         address currency;
         uint256 drop;
         bytes data;
+        string uri;
     }
 
     /**
@@ -36,7 +37,9 @@ interface IBulletin {
      */
     struct Resource {
         address from;
+        // uint48 supply;
         bytes data; // title, detail
+        string uri;
     }
 
     /**
@@ -44,6 +47,9 @@ interface IBulletin {
      */
     struct Trade {
         bool approved;
+        bool paused;
+        uint40 timestamp; // reserved for `access()` and `claim()`
+        uint40 duration;
         address from;
         bytes32 resource;
         address currency; // `0xbeef` reserved for staking, `address(0)` reserved for credit uses
@@ -59,16 +65,20 @@ interface IBulletin {
     event RequestUpdated(uint256 requestId);
     event ResourceUpdated(uint256 resourceId);
     event TradeUpdated(TradeType tradeType, uint256 subjectId, uint256 tradeId);
+    event Accessed(uint256 subjectId, uint256 tradeId);
 
     /* -------------------------------------------------------------------------- */
     /*                                   Errors.                                  */
     /* -------------------------------------------------------------------------- */
 
+    error Denied();
     error Approved();
     error Activated();
     error Denounced();
+
     error DropRequired();
     error InvalidTrade();
+    error InvalidTransfer();
     error NotYetActivated();
     error NotOriginalPoster();
 
@@ -97,7 +107,11 @@ interface IBulletin {
         uint256 responseId,
         uint256 amount
     ) external;
-    function approveExchange(uint256 resourceId, uint256 exchangeId) external;
+    function approveExchange(
+        uint256 resourceId,
+        uint256 exchangeId,
+        uint40 deadline
+    ) external;
 
     /* -------------------------------------------------------------------------- */
     /*                      Public / External View Functions.                     */
