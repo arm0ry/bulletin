@@ -83,6 +83,13 @@ interface IBulletin {
     error NotOriginalPoster();
 
     /* -------------------------------------------------------------------------- */
+    /*                                   Credit.                                  */
+    /* -------------------------------------------------------------------------- */
+
+    function activate(address user, uint256 limit) external;
+    function adjust(address user, uint256 limit) external;
+
+    /* -------------------------------------------------------------------------- */
     /*                     Public / External Write Functions.                     */
     /* -------------------------------------------------------------------------- */
 
@@ -112,6 +119,14 @@ interface IBulletin {
         uint256 exchangeId,
         uint40 deadline
     ) external;
+
+    function claim(
+        TradeType tradeType,
+        uint256 subjectId,
+        uint256 tradeId
+    ) external;
+
+    function pause(uint256 subjectId, uint256 tradeId) external;
 
     /* -------------------------------------------------------------------------- */
     /*                      Public / External View Functions.                     */

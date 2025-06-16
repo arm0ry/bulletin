@@ -296,6 +296,8 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
 
         // Refund.
         if (r.drop != 0) refund(r.from, r.currency, r.drop);
+
+        // todo: refund all staking and unapproved trades.
         delete requests[id];
         emit RequestUpdated(id);
     }
@@ -306,6 +308,8 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         Resource storage r = resources[id];
         if (r.from != msg.sender && rolesOf(msg.sender) != AGENT)
             revert NotOriginalPoster();
+
+        // todo: refund all staking and unapproved trades.
 
         // Withdraw.
         delete resources[id];
