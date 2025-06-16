@@ -242,6 +242,8 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
                 t.amount = _t.amount;
                 (_t.resource > 0) ? t.resource = _t.resource : t.resource;
             } else if (_t.currency == address(0xbeef) && stakeId != 0) {
+                // TODO: consider a generic staking() func to store all stakes and so stake is not bound to only specific resource / request
+                // TODO: possibly store stake usage with struct Credit{}
                 // Modify previous staking trades.
                 t = (tradeType == TradeType.RESPONSE)
                     ? responsesPerRequest[subjectId][stakeId]
@@ -480,7 +482,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
             !t.paused &&
             t.timestamp + t.duration >= uint40(block.timestamp)
         ) {
-            // TODO: allow access
+            // Access allowed.
             emit Accessed(subjectId, tradeId);
         } else revert Denied();
     }
@@ -795,7 +797,8 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
                 : t = exchangesPerResource[subjectId][i];
             if (t.from == user) {
                 if (t.currency == address(0xbeef) && !t.approved) stakeId = i;
-                else if (t.currency == address(0xbeef)) lastStake = i;
+                else if (t.currency == address(0xbeef))
+                    lastStake = i; // todo: this suggests staking may be approved but
                 else if (!t.approved) tradeId = i;
                 else lastTrade = i;
             } else continue;

@@ -2,10 +2,7 @@
 pragma solidity >=0.8.4;
 
 import {IBulletin} from "src/interface/IBulletin.sol";
-import {OwnableRoles} from "src/auth/OwnableRoles.sol";
 import {SafeTransferLib} from "lib/solady/src/utils/SafeTransferLib.sol";
-import {BERC6909} from "src/BERC6909.sol";
-
 import {console} from "lib/forge-std/src/console.sol";
 
 enum Scaling {
@@ -52,13 +49,8 @@ struct Proposal {
     string doc;
 }
 
-struct Vote {
-    uint40 timestamp;
-    bool yay;
-}
-
-/// @title Bulletin
-/// @notice A system to store and interact with requests and resources.
+/// @title BackOffice
+/// @notice A control center for a Bulletin.
 /// @author audsssy.eth
 contract Voting {
     error Denied();
@@ -77,9 +69,15 @@ contract Voting {
     /*                                Constructor.                                */
     /* -------------------------------------------------------------------------- */
 
-    function init() external {
+    function init(address b, uint40 g) external {
+        // Check permission.
+        IBulletin.Credit memory c = IBulletin(bulletin).getCredit(msg.sender);
+        if (c.limit == 0) revert Denied();
+
         // todo: init bulletin
+        bulletin = b;
         // todo: init grace period
+        gracePeriod = g;
     }
 
     /* -------------------------------------------------------------------------- */
@@ -110,7 +108,11 @@ contract Voting {
         // todo: record vote
     }
 
-    function process(uint256 id) external {}
+    function process(uint256 id) external {
+        // todo: count votes
+        // todo: check grace period
+        // todo: execute
+    }
 
     /* -------------------------------------------------------------------------- */
     /*                                  Internal.                                 */
