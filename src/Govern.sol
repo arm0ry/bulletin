@@ -2,11 +2,13 @@
 pragma solidity >=0.8.4;
 
 import {IBulletin} from "src/interface/IBulletin.sol";
+import {Bulletin} from "src/Bulletin.sol";
 import {SafeTransferLib} from "lib/solady/src/utils/SafeTransferLib.sol";
 import {console} from "lib/forge-std/src/console.sol";
 
 enum Status {
     ACTIVE,
+    SPONSORED,
     GRACE,
     PROCESSED
 }
@@ -92,8 +94,8 @@ contract Govern {
     /* -------------------------------------------------------------------------- */
 
     modifier credited() {
-        // Insufficient `IBulletin.Credit.limit`.
-        IBulletin.Credit memory c = IBulletin(bulletin).getCredit(msg.sender);
+        // Insufficient `Bulletin.Credit.limit`.
+        Bulletin.Credit memory c = Bulletin(bulletin).getCredit(msg.sender);
         if (c.limit == 0) revert Denied();
 
         _;
@@ -104,7 +106,11 @@ contract Govern {
     /* -------------------------------------------------------------------------- */
 
     function propose(Proposal calldata prop) external credited {
-        // Check allowlist parity.
+        // todo. consider below.
+        if (Bulletin(bulletin).hasAnyRole(msg.sender, 1 << 1)) revert Denied();
+
+        // Check array parity.
+        if (prop.roles.length == 0) revert Denied();
         if (prop.roles.length != prop.weights.length) revert Denied();
         if (prop.weights.length != prop.spots.length) revert Denied();
 
@@ -133,6 +139,20 @@ contract Govern {
         p.spots = prop.spots;
     }
 
+    function cancel(uint256 propId) external {}
+
+    function sponsor(uint256 propId) external credited {
+        // todo. only sponsored props are eligible for grace
+        // todo. non `denounced` address may sponsor.
+        if (Bulletin(bulletin).hasAnyRole(msg.sender, 1 << 1)) revert Denied();
+
+        // Proposal already processed.
+        Proposal storage p = proposals[propId];
+        if (p.status == Status.ACTIVE) {
+            p.status = Status.SPONSORED;
+        } else revert Denied();
+    }
+
     // User may vote until proposal is processed.
     function vote(
         uint256 propId,
@@ -140,8 +160,8 @@ contract Govern {
         bool yay,
         uint256 amount
     ) external returns (bool graceBegins) {
-        // Insufficient `IBulletin.Credit.limit`.
-        IBulletin.Credit memory c = IBulletin(bulletin).getCredit(msg.sender);
+        // Insufficient `Bulletin.Credit.limit`.
+        Bulletin.Credit memory c = IBulletin(bulletin).getCredit(msg.sender);
         if (c.limit == 0) revert Denied();
 
         // Proposal already processed.
@@ -160,17 +180,23 @@ contract Govern {
             uint256 length = p.roles.length;
             for (uint i; i < length; ++i) {
                 // Loop for roles to scale votes.
-                if (IBulletin(bulletin).hasAnyRole(msg.sender, p.roles[i])) {
+                if (Bulletin(bulletin).hasAnyRole(msg.sender, p.roles[i])) {
                     // Record vote.
                     --p.spots[i];
 
                     b.yay = yay;
                     b.voter = msg.sender;
                     b.timestamp = uint40(block.timestamp);
-                    b.amount = amount * p.weights[i]; // todo: double check math
+                    b.amount = (p.weights[i] == 0)
+                        ? 1 // one address one vote
+                        : ((amount > c.limit) ? c.limit : amount) *
+                            p.weights[i]; // todo: double check math
                 }
 
-                if (graceBegins = quorumReached(ballotId, p)) {
+                if (
+                    quorumReached(ballotId, p) && p.status == Status.SPONSORED
+                ) {
+                    graceBegins = true;
                     p.timestamp = uint40(block.timestamp);
                     p.status = Status.GRACE;
                 }
@@ -215,6 +241,8 @@ contract Govern {
         }
     }
 
+    function veto() external {}
+
     /* -------------------------------------------------------------------------- */
     /*                                  Internal.                                 */
     /* -------------------------------------------------------------------------- */
@@ -225,8 +253,8 @@ contract Govern {
     ) internal pure returns (bool) {
         address user;
         uint256 number;
-        IBulletin.Request memory req;
-        IBulletin.Resource memory res;
+        Bulletin.Request memory req;
+        Bulletin.Resource memory res;
 
         if (
             action == Action.ACTIVATE_CREDIT || action == Action.ADJUST_CREDIT
@@ -272,30 +300,30 @@ contract Govern {
         uint256 length = p.spots.length;
         uint256 sTotal = ballotId;
         for (uint256 i; i < length; ++i) sTotal += p.spots[i];
-        return ((ballotId * 100) / sTotal > p.quorum);
+        return ((ballotId * 100) / sTotal >= p.quorum);
     }
 
     function credit(Action action, address user, uint256 limit) internal {
         if (action == Action.ACTIVATE_CREDIT)
-            IBulletin(bulletin).activate(user, limit);
+            Bulletin(bulletin).activate(user, limit);
         else if (action == Action.ADJUST_CREDIT)
-            IBulletin(bulletin).adjust(user, limit);
+            Bulletin(bulletin).adjust(user, limit);
         else return;
     }
 
     function post(
         Action action,
         uint256 id,
-        IBulletin.Request calldata req,
-        IBulletin.Resource calldata res
+        Bulletin.Request calldata req,
+        Bulletin.Resource calldata res
     ) internal {
-        if (action == Action.POST_REQUEST) IBulletin(bulletin).request(0, req);
+        if (action == Action.POST_REQUEST) Bulletin(bulletin).request(0, req);
         else if (action == Action.UPDATE_REQUEST)
-            IBulletin(bulletin).request(id, req);
+            Bulletin(bulletin).request(id, req);
         else if (action == Action.POST_RESOURCE)
-            IBulletin(bulletin).resource(0, res);
+            Bulletin(bulletin).resource(0, res);
         else if (action == Action.UPDATE_RESOURCE)
-            IBulletin(bulletin).resource(0, res);
+            Bulletin(bulletin).resource(0, res);
         else return;
     }
 
@@ -307,29 +335,29 @@ contract Govern {
         uint40 duration
     ) internal {
         if (action == Action.APPROVE_RESPONSE)
-            IBulletin(bulletin).approveResponse(subjectId, tradeId, amount);
+            Bulletin(bulletin).approveResponse(subjectId, tradeId, amount);
         else if (action == Action.APPROVE_EXCHANGE)
-            IBulletin(bulletin).approveExchange(subjectId, tradeId, duration);
+            Bulletin(bulletin).approveExchange(subjectId, tradeId, duration);
         else return;
     }
 
     function withdraw(Action action, uint256 id) internal {
         if (action == Action.WITHDRAW_REQUEST)
-            IBulletin(bulletin).withdrawRequest(id);
+            Bulletin(bulletin).withdrawRequest(id);
         else if (action == Action.WITHDRAW_RESOURCE)
-            IBulletin(bulletin).withdrawResource(id);
+            Bulletin(bulletin).withdrawResource(id);
         else return;
     }
 
     function claim(
-        IBulletin.TradeType tradeType,
+        Bulletin.TradeType tradeType,
         uint256 subjectId,
         uint256 tradeId
     ) internal {
-        IBulletin(bulletin).claim(tradeType, subjectId, tradeId);
+        Bulletin(bulletin).claim(tradeType, subjectId, tradeId);
     }
 
     function pause(uint256 subjectId, uint256 tradeId) internal {
-        IBulletin(bulletin).pause(subjectId, tradeId);
+        Bulletin(bulletin).pause(subjectId, tradeId);
     }
 }
