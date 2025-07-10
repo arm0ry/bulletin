@@ -33,8 +33,6 @@ enum Action {
     APPROVE_EXCHANGE,
     CLAIM,
     PAUSE,
-    TRANSFER,
-    BATCH_TRANSFER,
     TRADE,
     WITHDRAW_TRADE
 }
@@ -62,10 +60,15 @@ struct Ballot {
     uint256 amount;
 }
 
-/// @title BackOffice
+struct Objection {
+    address user;
+    string content;
+}
+
+/// @title Governor Module for governing bulletin.
 /// @notice A control center for action Bulletin.
 /// @author audsssy.eth
-contract Govern {
+contract Governor {
     error Denied();
 
     uint40 public proposalId;
@@ -74,11 +77,15 @@ contract Govern {
 
     address public bulletin;
 
-    mapping(uint256 id => Proposal) public proposals;
+    mapping(uint256 => Proposal) public proposals;
 
-    mapping(uint256 id => uint256) public ballotIdsPerProposal;
+    mapping(uint256 => uint256) public ballotIdsPerProposal;
 
-    mapping(uint256 id => mapping(uint256 => Ballot)) public ballots;
+    mapping(uint256 => mapping(uint256 => Ballot)) public ballots;
+
+    mapping(uint256 => uint256) public objectionIdsPerProposal;
+
+    mapping(uint256 => mapping(uint256 => Objection)) public objections;
 
     /* -------------------------------------------------------------------------- */
     /*                                Constructor.                                */
@@ -106,7 +113,7 @@ contract Govern {
     /* -------------------------------------------------------------------------- */
 
     function propose(Proposal calldata prop) external credited {
-        // todo. consider below.
+        // `Denounced` users may not propose.
         if (Bulletin(bulletin).hasAnyRole(msg.sender, 1 << 1)) revert Denied();
 
         // Check array parity.
@@ -121,7 +128,7 @@ contract Govern {
         verifyPayload(prop.action, prop.payload);
 
         // Store prop settings.
-        Proposal storage p = proposals[proposalId++];
+        Proposal storage p = proposals[++proposalId];
         p.status = Status.ACTIVE;
         p.action = prop.action;
         p.tally = prop.tally;
@@ -142,12 +149,18 @@ contract Govern {
     function cancel(uint256 propId) external {}
 
     function sponsor(uint256 propId) external credited {
-        // todo. only sponsored props are eligible for grace
-        // todo. non `denounced` address may sponsor.
+        // `Denounced` users may not sponsor.
         if (Bulletin(bulletin).hasAnyRole(msg.sender, 1 << 1)) revert Denied();
 
-        // Proposal already processed.
         Proposal storage p = proposals[propId];
+        uint256 length = p.roles.length;
+        for (uint256 i; i < length; ++i) {
+            // Check role.
+            if (!Bulletin(bulletin).hasAnyRole(msg.sender, p.roles[i]))
+                revert Denied();
+        }
+
+        // Sponsor proposal.
         if (p.status == Status.ACTIVE) {
             p.status = Status.SPONSORED;
         } else revert Denied();
@@ -159,7 +172,7 @@ contract Govern {
         uint256 ballotId,
         bool yay,
         uint256 amount
-    ) external returns (bool graceBegins) {
+    ) external returns (bool) {
         // Insufficient `Bulletin.Credit.limit`.
         Bulletin.Credit memory c = IBulletin(bulletin).getCredit(msg.sender);
         if (c.limit == 0) revert Denied();
@@ -168,22 +181,19 @@ contract Govern {
         Proposal storage p = proposals[propId];
         if (p.status == Status.PROCESSED) revert Denied();
 
-        // Not original voter.
-        Ballot storage b = ballots[propId][ballotId];
-        if (b.voter != msg.sender) revert Denied();
-
-        // Get ballotId.
-        (ballotId == 0) ? ballotId = ++ballotIdsPerProposal[propId] : ballotId;
-        b = ballots[propId][ballotId];
-
-        if (p.roles.length != 0) {
-            uint256 length = p.roles.length;
-            for (uint i; i < length; ++i) {
-                // Loop for roles to scale votes.
-                if (Bulletin(bulletin).hasAnyRole(msg.sender, p.roles[i])) {
+        Ballot storage b;
+        uint256 length = p.roles.length;
+        for (uint256 i; i < length; ++i) {
+            // Loop for roles to scale votes.
+            if (Bulletin(bulletin).hasAnyRole(msg.sender, p.roles[i])) {
+                if (ballotId == 0) {
                     // Record vote.
                     --p.spots[i];
 
+                    // Get ballotId for new vote.
+                    ballotId = ++ballotIdsPerProposal[propId];
+
+                    b = ballots[propId][ballotId];
                     b.yay = yay;
                     b.voter = msg.sender;
                     b.timestamp = uint40(block.timestamp);
@@ -191,24 +201,35 @@ contract Govern {
                         ? 1 // one address one vote
                         : ((amount > c.limit) ? c.limit : amount) *
                             p.weights[i]; // todo: double check math
-                }
+                } else {
+                    // Not original voter.
+                    b = ballots[propId][ballotId];
+                    if (b.voter != msg.sender) revert Denied();
 
-                if (
-                    quorumReached(ballotId, p) && p.status == Status.SPONSORED
-                ) {
-                    graceBegins = true;
-                    p.timestamp = uint40(block.timestamp);
-                    p.status = Status.GRACE;
+                    // Modify previous vote.
+                    b.yay = yay;
+                    b.timestamp = uint40(block.timestamp);
+                    b.amount = (p.weights[i] == 0)
+                        ? 1 // one address one vote
+                        : ((amount > c.limit) ? c.limit : amount) *
+                            p.weights[i]; // todo: double check math
                 }
             }
+
+            if (quorumReached(ballotId, p) && p.status == Status.SPONSORED) {
+                p.timestamp = uint40(block.timestamp);
+                p.status = Status.GRACE;
+                return true;
+            }
         }
+        return false;
     }
 
-    function process(uint256 id) external {
-        uint256 ids = ballotIdsPerProposal[id];
+    function process(uint256 propId) external {
+        uint256 ids = ballotIdsPerProposal[propId];
 
         // Proposal not ready to process.
-        Proposal storage p = proposals[id];
+        Proposal storage p = proposals[propId];
         if (p.status != Status.GRACE) revert Denied();
 
         if (uint40(block.timestamp) > gracePeriod + p.timestamp) {
@@ -216,7 +237,7 @@ contract Govern {
             uint256 yTotal;
             uint256 nTotal;
             for (uint256 i; i < ids; ++i) {
-                Ballot storage b = ballots[id][ids];
+                Ballot storage b = ballots[propId][ids];
                 // todo. check tally method.
 
                 if (p.tally == Tally.SIMPLE_MAJORITY) {
@@ -241,7 +262,27 @@ contract Govern {
         }
     }
 
-    function veto() external {}
+    function object(uint256 propId, string calldata content) external {
+        if (proposalId > propId) {
+            Proposal storage p = proposals[propId];
+            if (p.status == Status.GRACE) {
+                // Derive dynamic number of co-signs from total ballots.
+                uint256 total;
+                for (uint256 i = 1; i <= proposalId; ++i) {
+                    total += ballotIdsPerProposal[i];
+                }
+
+                // todo. dynamic co-signs
+                if (
+                    (total / proposalId) / 3 > objectionIdsPerProposal[propId]
+                ) {
+                    uint256 id = ++objectionIdsPerProposal[propId];
+                    objections[propId][id].user = msg.sender;
+                    objections[propId][id].content = content;
+                }
+            } else revert Denied();
+        } else revert Denied();
+    }
 
     /* -------------------------------------------------------------------------- */
     /*                                  Internal.                                 */
@@ -255,6 +296,8 @@ contract Govern {
         uint256 number;
         Bulletin.Request memory req;
         Bulletin.Resource memory res;
+        IBulletin.Trade memory t;
+        IBulletin.TradeType tt;
 
         if (
             action == Action.ACTIVATE_CREDIT || action == Action.ADJUST_CREDIT
@@ -276,13 +319,19 @@ contract Govern {
                 payload,
                 (uint256, uint256, uint256, uint40)
             );
+        } else if (action == Action.TRADE) {
+            (tt, number, t) = abi.decode(
+                payload,
+                (IBulletin.TradeType, uint256, IBulletin.Trade)
+            );
         } else if (
             action == Action.WITHDRAW_REQUEST ||
-            action == Action.WITHDRAW_RESOURCE
+            action == Action.WITHDRAW_RESOURCE ||
+            action == Action.WITHDRAW_TRADE
         ) {
             number = abi.decode(payload, (uint256));
         } else if (action == Action.CLAIM) {
-            (IBulletin.TradeType tt, uint256 s, uint256 t) = abi.decode(
+            (tt, number, number) = abi.decode(
                 payload,
                 (IBulletin.TradeType, uint256, uint256)
             );
