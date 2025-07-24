@@ -4,20 +4,22 @@ pragma solidity >=0.8.4;
 import {IBulletin} from "src/interface/IBulletin.sol";
 import {Bulletin} from "src/Bulletin.sol";
 import {SafeTransferLib} from "lib/solady/src/utils/SafeTransferLib.sol";
+import {FixedPointMathLib} from "lib/solady/src/utils/FixedPointMathLib.sol";
 import {console} from "lib/forge-std/src/console.sol";
 
 enum Status {
     ACTIVE,
     SPONSORED,
     GRACE,
-    PROCESSED
+    PROCESSED,
+    CANCELLED
 }
 
 enum Tally {
     SIMPLE_MAJORITY,
     SUPERMAJORITY,
     QUADRATIC,
-    CONVICTION
+    S_CURVE
 }
 
 enum Action {
@@ -48,8 +50,8 @@ struct Proposal {
     string doc;
     // allowlist
     uint256[] roles;
-    uint256[] weights;
-    uint256[] spots;
+    uint256[] weights; // unsigned integer, 0 decimal
+    uint256[] spots; // unsigned integer, 0 decimal
 }
 
 struct Ballot {
@@ -71,7 +73,9 @@ struct Objection {
 contract Governor {
     error Denied();
 
-    uint40 public proposalId;
+    uint16 public proposalId; // keeping it small for gas golfing
+
+    uint40 public midpoint = 3 days; // for s-curve use only
 
     uint40 public gracePeriod; // starts after proposal meets passing requirement
 
@@ -91,7 +95,7 @@ contract Governor {
     /*                                Constructor.                                */
     /* -------------------------------------------------------------------------- */
 
-    function init(address b, uint40 g) external credited {
+    function init(address b, uint40 g) external {
         bulletin = b;
         gracePeriod = g;
     }
@@ -100,7 +104,19 @@ contract Governor {
     /*                                 Modifiers.                                 */
     /* -------------------------------------------------------------------------- */
 
-    modifier credited() {
+    modifier undenounced() {
+        // `Denounced` users may not propose.
+        if (
+            Bulletin(bulletin).hasAnyRole(
+                msg.sender,
+                Bulletin(bulletin).DENOUNCED()
+            )
+        ) revert Denied();
+
+        _;
+    }
+
+    modifier onlyCredited() {
         // Insufficient `Bulletin.Credit.limit`.
         Bulletin.Credit memory c = Bulletin(bulletin).getCredit(msg.sender);
         if (c.limit == 0) revert Denied();
@@ -112,10 +128,7 @@ contract Governor {
     /*                                 Governance.                                */
     /* -------------------------------------------------------------------------- */
 
-    function propose(Proposal calldata prop) external credited {
-        // `Denounced` users may not propose.
-        if (Bulletin(bulletin).hasAnyRole(msg.sender, 1 << 1)) revert Denied();
-
+    function propose(Proposal calldata prop) external onlyCredited undenounced {
         // Check array parity.
         if (prop.roles.length == 0) revert Denied();
         if (prop.roles.length != prop.weights.length) revert Denied();
@@ -125,7 +138,7 @@ contract Governor {
         if (prop.quorum > 100) revert Denied();
 
         // Check proposal payload.
-        verifyPayload(prop.action, prop.payload);
+        handlePayload(false, prop.action, prop.payload);
 
         // Store prop settings.
         Proposal storage p = proposals[++proposalId];
@@ -146,123 +159,141 @@ contract Governor {
         p.spots = prop.spots;
     }
 
-    function cancel(uint256 propId) external {}
-
-    function sponsor(uint256 propId) external credited {
-        // `Denounced` users may not sponsor.
-        if (Bulletin(bulletin).hasAnyRole(msg.sender, 1 << 1)) revert Denied();
-
+    function cancel(uint256 propId) external {
         Proposal storage p = proposals[propId];
+        if (
+            p.proposer == msg.sender &&
+            (p.status == Status.ACTIVE || p.status == Status.SPONSORED)
+        ) {
+            p.status = Status.CANCELLED;
+        } else revert Denied();
+    }
+
+    function sponsor(uint256 propId) external onlyCredited undenounced {
+        Proposal storage p = proposals[propId];
+        if (p.proposer == msg.sender) revert Denied();
+
+        bool hasRole;
         uint256 length = p.roles.length;
         for (uint256 i; i < length; ++i) {
             // Check role.
-            if (!Bulletin(bulletin).hasAnyRole(msg.sender, p.roles[i]))
-                revert Denied();
+            if (Bulletin(bulletin).hasAnyRole(msg.sender, p.roles[i]))
+                hasRole = true;
         }
 
         // Sponsor proposal.
-        if (p.status == Status.ACTIVE) {
+        if (hasRole && p.status == Status.ACTIVE) {
             p.status = Status.SPONSORED;
         } else revert Denied();
     }
 
     // User may vote until proposal is processed.
     function vote(
+        bool yay,
         uint256 propId,
         uint256 ballotId,
-        bool yay,
+        uint256 role,
         uint256 amount
-    ) external returns (bool) {
+    ) external onlyCredited returns (bool) {
         // Insufficient `Bulletin.Credit.limit`.
-        Bulletin.Credit memory c = IBulletin(bulletin).getCredit(msg.sender);
+        Bulletin.Credit memory c = Bulletin(bulletin).getCredit(msg.sender);
         if (c.limit == 0) revert Denied();
 
-        // Proposal already processed.
         Proposal storage p = proposals[propId];
-        if (p.status == Status.PROCESSED) revert Denied();
+        if (p.status == Status.SPONSORED || p.status == Status.GRACE) {
+            Ballot storage b;
 
-        Ballot storage b;
-        uint256 length = p.roles.length;
-        for (uint256 i; i < length; ++i) {
-            // Loop for roles to scale votes.
-            if (Bulletin(bulletin).hasAnyRole(msg.sender, p.roles[i])) {
-                if (ballotId == 0) {
-                    // Record vote.
-                    --p.spots[i];
-
-                    // Get ballotId for new vote.
-                    ballotId = ++ballotIdsPerProposal[propId];
-
-                    b = ballots[propId][ballotId];
-                    b.yay = yay;
-                    b.voter = msg.sender;
-                    b.timestamp = uint40(block.timestamp);
-                    b.amount = (p.weights[i] == 0)
-                        ? 1 // one address one vote
-                        : ((amount > c.limit) ? c.limit : amount) *
-                            p.weights[i]; // todo: double check math
-                } else {
-                    // Not original voter.
-                    b = ballots[propId][ballotId];
-                    if (b.voter != msg.sender) revert Denied();
-
-                    // Modify previous vote.
-                    b.yay = yay;
-                    b.timestamp = uint40(block.timestamp);
-                    b.amount = (p.weights[i] == 0)
-                        ? 1 // one address one vote
-                        : ((amount > c.limit) ? c.limit : amount) *
-                            p.weights[i]; // todo: double check math
+            // Check role and retrieve weights to scale vote.
+            bool hasRole;
+            uint256 weight;
+            uint256 length = p.roles.length;
+            for (uint256 i; i < length; ++i) {
+                if (
+                    role == p.roles[i] &&
+                    Bulletin(bulletin).hasAnyRole(msg.sender, role)
+                ) {
+                    hasRole = true;
+                    weight = p.weights[i];
+                    if (ballotId == 0) --p.spots[i];
+                    break;
                 }
             }
 
-            if (quorumReached(ballotId, p) && p.status == Status.SPONSORED) {
-                p.timestamp = uint40(block.timestamp);
-                p.status = Status.GRACE;
-                return true;
+            if (ballotId == 0) {
+                // Compute new ballotId.
+                ballotId = ++ballotIdsPerProposal[propId];
+                b = ballots[propId][ballotId];
+                b.voter = msg.sender;
+            } else {
+                b = ballots[propId][ballotId];
+                // Not original voter.
+                if (b.voter != msg.sender) revert Denied();
             }
-        }
-        return false;
+
+            // Store vote.
+            b.yay = yay;
+            b.timestamp = uint40(block.timestamp);
+
+            // todo. allow chunks?
+            if (p.tally == Tally.S_CURVE) b.amount = computeSCurve();
+            else
+                b.amount = (weight == 0)
+                    ? 1e18 // one address one vote
+                    : ((amount > c.limit) ? c.limit : amount) * weight;
+        } else revert Denied();
+
+        // todo. do we need to check if status is in grace period?
+        if (isQuorumSatisfied(ballotId, p) && p.status == Status.SPONSORED) {
+            p.timestamp = uint40(block.timestamp);
+            p.status = Status.GRACE;
+            return true;
+        } else return false;
     }
 
     function process(uint256 propId) external {
-        uint256 ids = ballotIdsPerProposal[propId];
-
         // Proposal not ready to process.
         Proposal storage p = proposals[propId];
         if (p.status != Status.GRACE) revert Denied();
 
+        uint256 ids = ballotIdsPerProposal[propId];
         if (uint40(block.timestamp) > gracePeriod + p.timestamp) {
-            // Count raw votes.
             uint256 yTotal;
             uint256 nTotal;
-            for (uint256 i; i < ids; ++i) {
-                Ballot storage b = ballots[propId][ids];
-                // todo. check tally method.
+            Ballot storage b;
 
-                if (p.tally == Tally.SIMPLE_MAJORITY) {
-                    (b.yay) ? yTotal = b.amount : nTotal = b.amount;
-                    if (yTotal > nTotal) {
-                        // todo: execute
-                    }
-                } else if (p.tally == Tally.SUPERMAJORITY) {
-                    if (yTotal > nTotal) {
-                        // todo: execute
-                    }
-                } else if (p.tally == Tally.QUADRATIC) {
-                    if (yTotal > nTotal) {
-                        // todo: execute
-                    }
-                } else if (p.tally == Tally.CONVICTION) {} else {
-                    if (yTotal > nTotal) {
-                        // todo: execute
-                    }
+            // Count votes.
+            for (uint256 i; i < ids; ++i) {
+                b = ballots[propId][ids];
+                if (p.tally == Tally.QUADRATIC) {
+                    (b.yay)
+                        ? yTotal += FixedPointMathLib.sqrt(b.amount)
+                        : nTotal += FixedPointMathLib.sqrt(b.amount);
+                } else if (p.tally == Tally.S_CURVE) {
+                    // todo. handle chunks?
+                } else (b.yay) ? yTotal += b.amount : nTotal += b.amount;
+            }
+
+            // Execute if passed.
+            if (
+                p.tally == Tally.SIMPLE_MAJORITY ||
+                p.tally == Tally.QUADRATIC ||
+                p.tally == Tally.S_CURVE
+            ) {
+                if (yTotal > nTotal) {
+                    // todo. execute.
+                }
+            } else {
+                if (yTotal > (2 * (yTotal + nTotal)) / 3) {
+                    // todo. execute.
                 }
             }
         }
     }
 
-    function object(uint256 propId, string calldata content) external {
+    function object(
+        uint256 propId,
+        string calldata obj
+    ) external onlyCredited undenounced {
         if (proposalId > propId) {
             Proposal storage p = proposals[propId];
             if (p.status == Status.GRACE) {
@@ -272,13 +303,15 @@ contract Governor {
                     total += ballotIdsPerProposal[i];
                 }
 
-                // todo. dynamic co-signs
+                // Dynamic co-signs
                 if (
                     (total / proposalId) / 3 > objectionIdsPerProposal[propId]
                 ) {
                     uint256 id = ++objectionIdsPerProposal[propId];
                     objections[propId][id].user = msg.sender;
-                    objections[propId][id].content = content;
+                    objections[propId][id].content = obj;
+                } else {
+                    // todo. extend grace period, i.e., update p.timestamp
                 }
             } else revert Denied();
         } else revert Denied();
@@ -288,10 +321,11 @@ contract Governor {
     /*                                  Internal.                                 */
     /* -------------------------------------------------------------------------- */
 
-    function verifyPayload(
+    function handlePayload(
+        bool passed,
         Action action,
         bytes calldata payload
-    ) internal pure returns (bool) {
+    ) internal returns (bool) {
         address user;
         uint256 number;
         Bulletin.Request memory req;
@@ -302,7 +336,11 @@ contract Governor {
         if (
             action == Action.ACTIVATE_CREDIT || action == Action.ADJUST_CREDIT
         ) {
-            (user, number) = abi.decode(payload, (address, uint256));
+            (address user, uint256 limit) = abi.decode(
+                payload,
+                (address, uint256)
+            );
+            if (passed) credit(action, user, limit);
         } else if (
             action == Action.POST_REQUEST || action == Action.UPDATE_REQUEST
         ) {
@@ -341,7 +379,7 @@ contract Governor {
         return true;
     }
 
-    function quorumReached(
+    function isQuorumSatisfied(
         uint256 ballotId,
         Proposal storage p
     ) internal view returns (bool) {
@@ -358,6 +396,16 @@ contract Governor {
         else if (action == Action.ADJUST_CREDIT)
             Bulletin(bulletin).adjust(user, limit);
         else return;
+    }
+
+    /// Approximates s-curve using rational function.
+    function computeSCurve(
+        uint256 votes,
+        uint256 duration
+    ) internal returns (uint256) {
+        // todo. make dynamic.
+        /// Voting Power = votes * duration^2 / (duration^2 + MIDPOINT^2)
+        return ((votes * (duration ^ 2)) / ((duration ^ 2) + (midpoint ^ 2)));
     }
 
     function post(

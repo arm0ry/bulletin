@@ -6,10 +6,9 @@ import {OwnableRoles} from "src/auth/OwnableRoles.sol";
 import {SafeTransferLib} from "lib/solady/src/utils/SafeTransferLib.sol";
 import {IERC20} from "src/interface/IERC20.sol";
 import {BERC6909} from "src/BERC6909.sol";
-
 import {console} from "lib/forge-std/src/console.sol";
 
-/// @title Bulletin
+/// @title Bulletin Module for coordinating bounties and P2P exchanges.
 /// @notice A system to store and interact with requests and resources.
 /// @author audsssy.eth
 contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
@@ -18,10 +17,10 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     /* -------------------------------------------------------------------------- */
 
     // `Agent` assist with activating credit limits and facilitating coordination.
-    uint8 internal constant AGENT = 1 << 0;
+    uint8 public constant AGENT = 1 << 0;
 
     // `Denounced` has restricted access to Bulltin.
-    uint8 internal constant DENOUNCED = 1 << 1;
+    uint8 public constant DENOUNCED = 1 << 1;
 
     /* -------------------------------------------------------------------------- */
     /*                                  Storage.                                  */
@@ -49,7 +48,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     /*                                 Modifiers.                                 */
     /* -------------------------------------------------------------------------- */
 
-    modifier denounced() {
+    modifier undenounced() {
         if (hasAnyRole(msg.sender, DENOUNCED)) revert Denounced();
         _;
     }
@@ -103,7 +102,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
 
     // Post or update a `Request`
     // Each request is an invitation to engage
-    function request(uint256 id, Request calldata _r) external denounced {
+    function request(uint256 id, Request calldata _r) external undenounced {
         if (_r.from != msg.sender) revert Unauthorized();
         _request(id, _r);
     }
@@ -147,7 +146,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
 
     // Post or update a `Resource`.
     // Each resource is an invitation to engage.
-    function resource(uint256 id, Resource calldata _r) external denounced {
+    function resource(uint256 id, Resource calldata _r) external undenounced {
         _resource(false, id, _r);
     }
 
@@ -195,7 +194,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         TradeType tradeType,
         uint256 subjectId,
         Trade calldata _t
-    ) external denounced {
+    ) external undenounced {
         if (_t.from != msg.sender) revert Unauthorized();
         _trade(tradeType, subjectId, _t);
     }
@@ -348,7 +347,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         uint256 subjectId,
         uint256 tradeId,
         uint256 amount
-    ) external denounced {
+    ) external undenounced {
         Request storage r = requests[subjectId];
         if (r.from != msg.sender) revert NotOriginalPoster();
 
@@ -402,7 +401,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         uint256 subjectId,
         uint256 tradeId,
         uint40 duration
-    ) external denounced {
+    ) external undenounced {
         Resource storage r = resources[subjectId];
         if (r.from != msg.sender) revert NotOriginalPoster();
 
@@ -562,7 +561,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         }
     }
 
-    function pause(uint256 subjectId, uint256 tradeId) external denounced {
+    function pause(uint256 subjectId, uint256 tradeId) external undenounced {
         uint256 id = encodeTokenId(
             address(this),
             TradeType.EXCHANGE,
