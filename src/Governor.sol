@@ -18,8 +18,7 @@ enum Status {
 enum Tally {
     SIMPLE_MAJORITY,
     SUPERMAJORITY,
-    QUADRATIC,
-    S_CURVE
+    QUADRATIC
 }
 
 enum Action {
@@ -56,8 +55,6 @@ struct Proposal {
 
 struct Ballot {
     bool yay;
-    uint40 id;
-    uint40 timestamp;
     address voter;
     uint256 amount;
 }
@@ -118,7 +115,7 @@ contract Governor {
 
     modifier onlyCredited() {
         // Insufficient `Bulletin.Credit.limit`.
-        Bulletin.Credit memory c = Bulletin(bulletin).getCredit(msg.sender);
+        IBulletin.Credit memory c = IBulletin(bulletin).getCredit(msg.sender);
         if (c.limit == 0) revert Denied();
 
         _;
@@ -196,7 +193,7 @@ contract Governor {
         uint256 amount
     ) external onlyCredited returns (bool) {
         // Insufficient `Bulletin.Credit.limit`.
-        Bulletin.Credit memory c = Bulletin(bulletin).getCredit(msg.sender);
+        IBulletin.Credit memory c = IBulletin(bulletin).getCredit(msg.sender);
         if (c.limit == 0) revert Denied();
 
         Proposal storage p = proposals[propId];
@@ -232,14 +229,9 @@ contract Governor {
 
             // Store vote.
             b.yay = yay;
-            b.timestamp = uint40(block.timestamp);
-
-            // todo. allow chunks?
-            if (p.tally == Tally.S_CURVE) b.amount = computeSCurve();
-            else
-                b.amount = (weight == 0)
-                    ? 1e18 // one address one vote
-                    : ((amount > c.limit) ? c.limit : amount) * weight;
+            b.amount = (weight == 0)
+                ? 1e18 // one address one vote
+                : ((amount > c.limit) ? c.limit : amount) * weight;
         } else revert Denied();
 
         // todo. do we need to check if status is in grace period?
@@ -264,28 +256,23 @@ contract Governor {
             // Count votes.
             for (uint256 i; i < ids; ++i) {
                 b = ballots[propId][ids];
-                if (p.tally == Tally.QUADRATIC) {
+                if (p.tally == Tally.QUADRATIC)
                     (b.yay)
                         ? yTotal += FixedPointMathLib.sqrt(b.amount)
                         : nTotal += FixedPointMathLib.sqrt(b.amount);
-                } else if (p.tally == Tally.S_CURVE) {
-                    // todo. handle chunks?
-                } else (b.yay) ? yTotal += b.amount : nTotal += b.amount;
+                else (b.yay) ? yTotal += b.amount : nTotal += b.amount;
             }
 
             // Execute if passed.
             if (
-                p.tally == Tally.SIMPLE_MAJORITY ||
-                p.tally == Tally.QUADRATIC ||
-                p.tally == Tally.S_CURVE
+                p.tally == Tally.SIMPLE_MAJORITY || p.tally == Tally.QUADRATIC
             ) {
-                if (yTotal > nTotal) {
-                    // todo. execute.
-                }
+                // Execute.
+                if (yTotal > nTotal) handlePayload(true, p.action, p.payload);
             } else {
-                if (yTotal > (2 * (yTotal + nTotal)) / 3) {
-                    // todo. execute.
-                }
+                // Execute.
+                if (yTotal > (2 * (yTotal + nTotal)) / 3)
+                    handlePayload(true, p.action, p.payload);
             }
         }
     }
@@ -324,57 +311,75 @@ contract Governor {
     function handlePayload(
         bool passed,
         Action action,
-        bytes calldata payload
+        bytes memory payload
     ) internal returns (bool) {
-        address user;
+        address addr;
+        uint256 subjectId;
+        uint256 tradeId;
         uint256 number;
-        Bulletin.Request memory req;
-        Bulletin.Resource memory res;
+        IBulletin.Request memory req;
+        IBulletin.Resource memory res;
         IBulletin.Trade memory t;
         IBulletin.TradeType tt;
 
         if (
             action == Action.ACTIVATE_CREDIT || action == Action.ADJUST_CREDIT
         ) {
-            (address user, uint256 limit) = abi.decode(
-                payload,
-                (address, uint256)
-            );
-            if (passed) credit(action, user, limit);
+            (addr, number) = abi.decode(payload, (address, uint256));
+            if (passed) credit(action, addr, number);
         } else if (
             action == Action.POST_REQUEST || action == Action.UPDATE_REQUEST
         ) {
-            (number, req) = abi.decode(payload, (uint256, IBulletin.Request));
+            (subjectId, req) = abi.decode(
+                payload,
+                (uint256, IBulletin.Request)
+            );
+            if (passed) post(action, subjectId, req, res);
         } else if (
             action == Action.POST_RESOURCE || action == Action.UPDATE_RESOURCE
         ) {
-            (number, res) = abi.decode(payload, (uint256, IBulletin.Resource));
+            (subjectId, res) = abi.decode(
+                payload,
+                (uint256, IBulletin.Resource)
+            );
+            if (passed) post(action, subjectId, req, res);
         } else if (
             action == Action.APPROVE_RESPONSE ||
             action == Action.APPROVE_EXCHANGE
         ) {
-            (number, number, number, number) = abi.decode(
+            uint40 duration;
+            (subjectId, tradeId, number, duration) = abi.decode(
                 payload,
                 (uint256, uint256, uint256, uint40)
             );
+            if (passed) approve(action, subjectId, tradeId, number, duration);
         } else if (action == Action.TRADE) {
-            (tt, number, t) = abi.decode(
+            (tt, subjectId, t) = abi.decode(
                 payload,
                 (IBulletin.TradeType, uint256, IBulletin.Trade)
             );
+            if (passed) trade(tt, subjectId, t);
         } else if (
             action == Action.WITHDRAW_REQUEST ||
-            action == Action.WITHDRAW_RESOURCE ||
-            action == Action.WITHDRAW_TRADE
+            action == Action.WITHDRAW_RESOURCE
         ) {
-            number = abi.decode(payload, (uint256));
-        } else if (action == Action.CLAIM) {
-            (tt, number, number) = abi.decode(
+            subjectId = abi.decode(payload, (uint256));
+            if (passed) withdraw(action, tt, subjectId, tradeId);
+        } else if (action == Action.WITHDRAW_TRADE) {
+            (tt, subjectId, tradeId) = abi.decode(
                 payload,
                 (IBulletin.TradeType, uint256, uint256)
             );
+            if (passed) withdraw(action, tt, subjectId, tradeId);
+        } else if (action == Action.CLAIM) {
+            (tt, subjectId, tradeId) = abi.decode(
+                payload,
+                (IBulletin.TradeType, uint256, uint256)
+            );
+            if (passed) claim(tt, subjectId, tradeId);
         } else if (action == Action.PAUSE) {
-            (number, number) = abi.decode(payload, (uint256, uint256));
+            (subjectId, tradeId) = abi.decode(payload, (uint256, uint256));
+            if (passed) pause(subjectId, tradeId);
         } else return false;
         return true;
     }
@@ -392,35 +397,25 @@ contract Governor {
 
     function credit(Action action, address user, uint256 limit) internal {
         if (action == Action.ACTIVATE_CREDIT)
-            Bulletin(bulletin).activate(user, limit);
+            IBulletin(bulletin).activate(user, limit);
         else if (action == Action.ADJUST_CREDIT)
-            Bulletin(bulletin).adjust(user, limit);
+            IBulletin(bulletin).adjust(user, limit);
         else return;
-    }
-
-    /// Approximates s-curve using rational function.
-    function computeSCurve(
-        uint256 votes,
-        uint256 duration
-    ) internal returns (uint256) {
-        // todo. make dynamic.
-        /// Voting Power = votes * duration^2 / (duration^2 + MIDPOINT^2)
-        return ((votes * (duration ^ 2)) / ((duration ^ 2) + (midpoint ^ 2)));
     }
 
     function post(
         Action action,
         uint256 id,
-        Bulletin.Request calldata req,
-        Bulletin.Resource calldata res
+        IBulletin.Request memory req,
+        IBulletin.Resource memory res
     ) internal {
-        if (action == Action.POST_REQUEST) Bulletin(bulletin).request(0, req);
+        if (action == Action.POST_REQUEST) IBulletin(bulletin).request(0, req);
         else if (action == Action.UPDATE_REQUEST)
-            Bulletin(bulletin).request(id, req);
+            IBulletin(bulletin).request(id, req);
         else if (action == Action.POST_RESOURCE)
-            Bulletin(bulletin).resource(0, res);
+            IBulletin(bulletin).resource(0, res);
         else if (action == Action.UPDATE_RESOURCE)
-            Bulletin(bulletin).resource(0, res);
+            IBulletin(bulletin).resource(0, res);
         else return;
     }
 
@@ -432,29 +427,44 @@ contract Governor {
         uint40 duration
     ) internal {
         if (action == Action.APPROVE_RESPONSE)
-            Bulletin(bulletin).approveResponse(subjectId, tradeId, amount);
+            IBulletin(bulletin).approveResponse(subjectId, tradeId, amount);
         else if (action == Action.APPROVE_EXCHANGE)
-            Bulletin(bulletin).approveExchange(subjectId, tradeId, duration);
+            IBulletin(bulletin).approveExchange(subjectId, tradeId, duration);
         else return;
     }
 
-    function withdraw(Action action, uint256 id) internal {
+    function trade(
+        IBulletin.TradeType tradeType,
+        uint256 subjectId,
+        IBulletin.Trade memory t
+    ) internal {
+        IBulletin(bulletin).trade(tradeType, subjectId, t);
+    }
+
+    function withdraw(
+        Action action,
+        IBulletin.TradeType tradeType,
+        uint256 subjectId,
+        uint256 tradeId
+    ) internal {
         if (action == Action.WITHDRAW_REQUEST)
-            Bulletin(bulletin).withdrawRequest(id);
+            IBulletin(bulletin).withdrawRequest(subjectId);
         else if (action == Action.WITHDRAW_RESOURCE)
-            Bulletin(bulletin).withdrawResource(id);
+            IBulletin(bulletin).withdrawResource(subjectId);
+        else if (action == Action.WITHDRAW_TRADE)
+            IBulletin(bulletin).withdrawTrade(tradeType, subjectId, tradeId);
         else return;
     }
 
     function claim(
-        Bulletin.TradeType tradeType,
+        IBulletin.TradeType tradeType,
         uint256 subjectId,
         uint256 tradeId
     ) internal {
-        Bulletin(bulletin).claim(tradeType, subjectId, tradeId);
+        IBulletin(bulletin).claim(tradeType, subjectId, tradeId);
     }
 
     function pause(uint256 subjectId, uint256 tradeId) internal {
-        Bulletin(bulletin).pause(subjectId, tradeId);
+        IBulletin(bulletin).pause(subjectId, tradeId);
     }
 }
