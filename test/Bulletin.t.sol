@@ -148,22 +148,6 @@ contract BulletinTest is Test {
         id = bulletin.requestId();
     }
 
-    // function requestByCredit(
-    //     address user,
-    //     uint256 amount
-    // ) public payable returns (uint256 id) {
-    //     IBulletin.Request memory a = IBulletin.Request({
-    //         from: user,
-    //         currency: address(0xc0d),
-    //         drop: amount,
-    //         data: BYTES
-    //     });
-
-    //     vm.prank(user);
-    //     bulletin.request(0, a);
-    //     id = bulletin.requestId();
-    // }
-
     function updateRequest(
         address op,
         uint256 requestId,
@@ -805,87 +789,87 @@ contract BulletinTest is Test {
         assertEq(credit.amount, 6 ether);
     }
 
-    function test_Staking(uint256 amount) public payable {
-        vm.assume(2 ether > amount);
-        vm.assume(amount > 10_000);
-        test_ApproveCreditExchangeForResource_ByMember(2 ether);
+    // function test_Staking(uint256 amount) public payable {
+    //     vm.assume(2 ether > amount);
+    //     vm.assume(amount > 10_000);
+    //     test_ApproveCreditExchangeForResource_ByMember(2 ether);
 
-        // Staking
-        uint256 stakingId = setupStaking(
-            IBulletin.TradeType.EXCHANGE,
-            bob,
-            1,
-            amount
-        );
-        (
-            uint256 tradeId,
-            uint256 sId,
-            uint256 lastTrade,
-            uint256 lastStake
-        ) = Bulletin(address(bulletin)).getTradeAndStakeIdsByUser(
-                IBulletin.TradeType.EXCHANGE,
-                1,
-                bob
-            );
-        assertEq(tradeId, 0);
-        assertEq(stakingId, sId);
-        assertEq(lastTrade, 1);
-        assertEq(lastStake, 0);
+    //     // Staking
+    //     uint256 stakingId = setupStaking(
+    //         IBulletin.TradeType.EXCHANGE,
+    //         bob,
+    //         1,
+    //         amount
+    //     );
+    //     (
+    //         uint256 tradeId,
+    //         uint256 sId,
+    //         uint256 lastTrade,
+    //         uint256 lastStake
+    //     ) = Bulletin(address(bulletin)).getUnapprovedTradeIdByUser(
+    //             IBulletin.TradeType.EXCHANGE,
+    //             1,
+    //             bob
+    //         );
+    //     assertEq(tradeId, 0);
+    //     assertEq(stakingId, sId);
+    //     assertEq(lastTrade, 1);
+    //     assertEq(lastStake, 0);
 
-        IBulletin.Trade memory trade = bulletin.getTrade(
-            IBulletin.TradeType.EXCHANGE,
-            1,
-            stakingId
-        );
-        assertEq(trade.approved, false);
-        assertEq(trade.from, bob);
-        assertEq(trade.currency, address(0xbeef));
-        assertEq(trade.amount, amount);
-        assertEq(trade.resource, bytes32(block.timestamp));
-        assertEq(trade.content, TEST);
-        assertEq(trade.data, BYTES);
-    }
+    //     IBulletin.Trade memory trade = bulletin.getTrade(
+    //         IBulletin.TradeType.EXCHANGE,
+    //         1,
+    //         stakingId
+    //     );
+    //     assertEq(trade.approved, false);
+    //     assertEq(trade.from, bob);
+    //     assertEq(trade.currency, address(0xbeef));
+    //     assertEq(trade.amount, amount);
+    //     assertEq(trade.resource, bytes32(block.timestamp));
+    //     assertEq(trade.content, TEST);
+    //     assertEq(trade.data, BYTES);
+    // }
 
-    function test_UpdateStaking() public payable {
-        test_Staking(1 ether);
+    // function test_UpdateStaking() public payable {
+    //     test_Staking(1 ether);
 
-        uint256 stakingId = setupStaking(
-            IBulletin.TradeType.EXCHANGE,
-            bob,
-            1,
-            2 ether
-        );
+    //     uint256 stakingId = setupStaking(
+    //         IBulletin.TradeType.EXCHANGE,
+    //         bob,
+    //         1,
+    //         2 ether
+    //     );
 
-        uint256 timestamp = block.timestamp;
+    //     uint256 timestamp = block.timestamp;
 
-        (
-            uint256 tradeId,
-            uint256 sId,
-            uint256 lastTrade,
-            uint256 lastStake
-        ) = Bulletin(address(bulletin)).getTradeAndStakeIdsByUser(
-                IBulletin.TradeType.EXCHANGE,
-                1,
-                bob
-            );
-        assertEq(tradeId, 0);
-        assertEq(stakingId, sId);
-        assertEq(lastTrade, 1);
-        assertEq(lastStake, 0);
+    //     (
+    //         uint256 tradeId,
+    //         uint256 sId,
+    //         uint256 lastTrade,
+    //         uint256 lastStake
+    //     ) = Bulletin(address(bulletin)).getUnapprovedTradeIdByUser(
+    //             IBulletin.TradeType.EXCHANGE,
+    //             1,
+    //             bob
+    //         );
+    //     assertEq(tradeId, 0);
+    //     assertEq(stakingId, sId);
+    //     assertEq(lastTrade, 1);
+    //     assertEq(lastStake, 0);
 
-        IBulletin.Trade memory trade = bulletin.getTrade(
-            IBulletin.TradeType.EXCHANGE,
-            1,
-            stakingId
-        );
-        assertEq(trade.approved, false);
-        assertEq(trade.from, bob);
-        assertEq(trade.currency, address(0xbeef));
-        assertEq(trade.amount, 2 ether);
-        assertEq(trade.resource, bytes32(timestamp));
-        assertEq(trade.content, TEST);
-        assertEq(trade.data, BYTES);
-    }
+    //     IBulletin.Trade memory trade = bulletin.getTrade(
+    //         IBulletin.TradeType.EXCHANGE,
+    //         1,
+    //         stakingId
+    //     );
+    //     assertEq(trade.approved, false);
+    //     assertEq(trade.from, bob);
+    //     assertEq(trade.currency, address(0xbeef));
+    //     assertEq(trade.amount, 2 ether);
+    //     assertEq(trade.resource, bytes32(timestamp));
+    //     assertEq(trade.content, TEST);
+    //     assertEq(trade.data, BYTES);
+    // }
 
     function test_ExchangeForResource_ApproveCurrency(
         uint256 amount
@@ -918,7 +902,7 @@ contract BulletinTest is Test {
         assertEq(mock.balanceOf(bob), 0);
         assertEq(mock.balanceOf(address(bulletin)), amount);
 
-        (uint256 id, , , ) = bulletin.getTradeAndStakeIdsByUser(
+        uint256 id = bulletin.getUnapprovedTradeIdByUser(
             IBulletin.TradeType.EXCHANGE,
             resourceId,
             bob
@@ -984,7 +968,7 @@ contract BulletinTest is Test {
         assertEq(trade.content, TEST);
         assertEq(trade.data, BYTES);
 
-        (uint256 id, , , ) = bulletin.getTradeAndStakeIdsByUser(
+        uint256 id = bulletin.getUnapprovedTradeIdByUser(
             IBulletin.TradeType.EXCHANGE,
             resourceId,
             bob
@@ -1048,7 +1032,7 @@ contract BulletinTest is Test {
 
         withdrawExchange(bob, resourceId, exchangeId);
 
-        (uint256 id, , , ) = bulletin.getTradeAndStakeIdsByUser(
+        uint256 id = bulletin.getUnapprovedTradeIdByUser(
             IBulletin.TradeType.EXCHANGE,
             resourceId,
             bob
@@ -1133,7 +1117,7 @@ contract BulletinTest is Test {
 
         withdrawResponse(alice, requestId, responseId);
 
-        (uint256 id, , , ) = bulletin.getTradeAndStakeIdsByUser(
+        uint256 id = bulletin.getUnapprovedTradeIdByUser(
             IBulletin.TradeType.RESPONSE,
             requestId,
             alice
@@ -1186,7 +1170,7 @@ contract BulletinTest is Test {
         assertEq(MockERC20(mock).balanceOf(address(bulletin)), 0);
         assertEq(MockERC20(mock).balanceOf(alice), amount);
 
-        (, , uint256 lastTrade, ) = bulletin.getTradeAndStakeIdsByUser(
+        uint256 lastTrade = bulletin.getUnapprovedTradeIdByUser(
             IBulletin.TradeType.RESPONSE,
             requestId,
             alice
@@ -1227,19 +1211,18 @@ contract BulletinTest is Test {
         // approve first trade
         approveResponse(owner, requestId, responseId, (amount * 20) / 100);
 
-        (uint256 tradeId, , uint256 lastTrade, ) = bulletin
-            .getTradeAndStakeIdsByUser(
-                IBulletin.TradeType.RESPONSE,
-                requestId,
-                alice
-            );
+        uint256 tradeId = bulletin.getUnapprovedTradeIdByUser(
+            IBulletin.TradeType.RESPONSE,
+            requestId,
+            alice
+        );
         IBulletin.Trade memory _trade = bulletin.getTrade(
             IBulletin.TradeType.RESPONSE,
             requestId,
-            lastTrade
+            tradeId
         );
         assertEq(tradeId, 0);
-        assertEq(lastTrade, responseId);
+        assertEq(tradeId, responseId);
         assertEq(_trade.approved, true);
         assertEq(_trade.from, alice);
         assertEq(_trade.currency, address(mock));
@@ -1251,7 +1234,7 @@ contract BulletinTest is Test {
         // setup second trade
         responseId = setupSimpleResponse(bob, requestId);
 
-        (tradeId, , lastTrade, ) = bulletin.getTradeAndStakeIdsByUser(
+        tradeId = bulletin.getUnapprovedTradeIdByUser(
             IBulletin.TradeType.RESPONSE,
             requestId,
             bob
@@ -1262,7 +1245,6 @@ contract BulletinTest is Test {
             tradeId
         );
         assertEq(tradeId, 2);
-        assertEq(lastTrade, 0);
 
         // approve second trade
         approveResponse(owner, requestId, responseId, (amount * 20) / 100);
@@ -1277,7 +1259,7 @@ contract BulletinTest is Test {
         assertEq(MockERC20(mock).balanceOf(alice), 0);
         assertEq(MockERC20(mock).balanceOf(bob), (amount * 20) / 100);
 
-        (tradeId, , lastTrade, ) = bulletin.getTradeAndStakeIdsByUser(
+        tradeId = bulletin.getUnapprovedTradeIdByUser(
             IBulletin.TradeType.RESPONSE,
             requestId,
             bob
@@ -1285,10 +1267,10 @@ contract BulletinTest is Test {
         _trade = bulletin.getTrade(
             IBulletin.TradeType.RESPONSE,
             requestId,
-            lastTrade
+            tradeId
         );
         assertEq(tradeId, 0);
-        assertEq(lastTrade, responseId);
+        assertEq(tradeId, responseId);
         assertEq(_trade.approved, true);
         assertEq(_trade.from, bob);
         assertEq(_trade.currency, address(0));
