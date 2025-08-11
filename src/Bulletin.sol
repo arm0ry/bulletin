@@ -36,13 +36,13 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
 
     // Mappings by `requestId`.
     mapping(uint256 => Request) internal requests;
-    mapping(uint256 => uint256) public responseIdsPerRequest;
-    mapping(uint256 => mapping(uint256 => Trade)) internal responsesPerRequest; // Reciprocal events.
+    mapping(uint256 => uint256) public tradeIdsPerRequest;
+    mapping(uint256 => mapping(uint256 => Trade)) internal tradesPerRequest; // Reciprocal events.
 
     // Mappings by `resourceId`.
     mapping(uint256 => Resource) internal resources;
-    mapping(uint256 => uint256) public exchangeIdsPerResource;
-    mapping(uint256 => mapping(uint256 => Trade)) internal exchangesPerResource; // Reciprocal events.
+    mapping(uint256 => uint256) public tradeIdsPerResource;
+    mapping(uint256 => mapping(uint256 => Trade)) internal tradesPerResource; // Reciprocal events.
 
     /* -------------------------------------------------------------------------- */
     /*                                 Modifiers.                                 */
@@ -103,8 +103,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     // Post or update a `Request`
     // Each request is an invitation to engage
     function request(uint256 id, Request calldata _r) external undenounced {
-        if (_r.from != msg.sender) revert Unauthorized();
-        _request(id, _r);
+        _request(false, id, _r);
     }
 
     // Post or update a `Request` by Agent
@@ -112,10 +111,10 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         uint256 id,
         Request calldata _r
     ) external onlyRoles(AGENT) {
-        _request(id, _r);
+        _request(true, id, _r);
     }
 
-    function _request(uint256 id, Request calldata _r) internal {
+    function _request(bool isAgent, uint256 id, Request calldata _r) internal {
         // Address with credit balance above a credit limit threshold may post `Request`.
         if (creditLimitToAddRequest > credits[_r.from].limit)
             revert Unauthorized();
@@ -127,6 +126,10 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         if (id != 0) {
             // Modify previous `Request`.
             Request storage r = requests[id];
+
+            if (!isAgent)
+                if (r.from != msg.sender) revert Unauthorized();
+
             (bytes(_r.data).length > 0) ? r.data = _r.data : r.data;
             (bytes(_r.uri).length > 0) ? r.uri = _r.uri : r.uri;
 
@@ -136,6 +139,9 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
             // Update new amount.
             r.drop = _r.drop;
         } else {
+            if (!isAgent)
+                if (_r.from != msg.sender) revert Unauthorized();
+
             // Add new request.
             unchecked {
                 requests[id = ++requestId] = _r;
@@ -195,8 +201,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         uint256 subjectId,
         Trade calldata _t
     ) external undenounced {
-        if (_t.from != msg.sender) revert Unauthorized();
-        _trade(tradeType, subjectId, _t);
+        _trade(false, tradeType, subjectId, _t);
     }
 
     // Post a `Trade` by Agent
@@ -205,10 +210,11 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         uint256 subjectId,
         Trade calldata _t
     ) external onlyRoles(AGENT) {
-        _trade(tradeType, subjectId, _t);
+        _trade(true, tradeType, subjectId, _t);
     }
 
     function _trade(
+        bool isAgent,
         TradeType tradeType,
         uint256 subjectId,
         Trade calldata _t
@@ -232,8 +238,11 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
             if (tradeId != 0) {
                 // Modify previous unapproved trade.
                 t = (tradeType == TradeType.RESPONSE)
-                    ? responsesPerRequest[subjectId][tradeId]
-                    : exchangesPerResource[subjectId][tradeId];
+                    ? tradesPerRequest[subjectId][tradeId]
+                    : tradesPerResource[subjectId][tradeId];
+
+                if (!isAgent)
+                    if (t.from != msg.sender) revert Unauthorized();
 
                 // Refund.
                 if (t.amount != 0) refund(t.from, t.currency, t.amount);
@@ -244,12 +253,15 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
             } else {
                 // Add a new trade.
                 t = (tradeType == TradeType.RESPONSE)
-                    ? responsesPerRequest[subjectId][
-                        ++responseIdsPerRequest[subjectId]
+                    ? tradesPerRequest[subjectId][
+                        ++tradeIdsPerRequest[subjectId]
                     ]
-                    : exchangesPerResource[subjectId][
-                        ++exchangeIdsPerResource[subjectId]
+                    : tradesPerResource[subjectId][
+                        ++tradeIdsPerResource[subjectId]
                     ];
+
+                if (!isAgent)
+                    if (_t.from != msg.sender) revert Unauthorized();
 
                 // Store.
                 t.from = _t.from;
@@ -267,7 +279,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     }
 
     /* -------------------------------------------------------------------------- */
-    /*                             Manage Engagement.                             */
+    /*                                  Withdraw.                                 */
     /* -------------------------------------------------------------------------- */
 
     /// @notice Request
@@ -280,7 +292,17 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         // Refund.
         if (r.drop != 0) refund(r.from, r.currency, r.drop);
 
-        // todo: refund all staking and unapproved trades.
+        // Refund unapproved trades.
+        Trade storage t;
+        uint256 length = tradeIdsPerRequest[id];
+        for (uint256 i = 1; i <= length; ++i) {
+            t = tradesPerRequest[id][i];
+            if (!t.approved && t.amount > 0) {
+                refund(t.from, t.currency, t.amount);
+                delete tradesPerRequest[id][i];
+            }
+        }
+
         delete requests[id];
         emit RequestUpdated(id);
     }
@@ -292,7 +314,16 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         if (r.from != msg.sender && rolesOf(msg.sender) != AGENT)
             revert NotOriginalPoster();
 
-        // todo: refund all staking and unapproved trades.
+        // Refund unapproved trades.
+        Trade storage t;
+        uint256 length = tradeIdsPerResource[id];
+        for (uint256 i = 1; i <= length; ++i) {
+            t = tradesPerResource[id][i];
+            if (!t.approved && t.amount > 0) {
+                refund(t.from, t.currency, t.amount);
+                delete tradesPerResource[id][i];
+            }
+        }
 
         // Withdraw.
         delete resources[id];
@@ -308,8 +339,8 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     ) external {
         Trade storage t;
         (tradeType == TradeType.RESPONSE)
-            ? t = responsesPerRequest[subjectId][tradeId]
-            : t = exchangesPerResource[subjectId][tradeId];
+            ? t = tradesPerRequest[subjectId][tradeId]
+            : t = tradesPerResource[subjectId][tradeId];
         if (t.approved) revert Approved();
         if (t.from != msg.sender && rolesOf(msg.sender) != AGENT)
             revert NotOriginalPoster();
@@ -319,13 +350,17 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
 
         // Remove trade.
         (tradeType == TradeType.RESPONSE)
-            ? delete responsesPerRequest[subjectId][tradeId]
-            : delete exchangesPerResource[subjectId][tradeId];
+            ? delete tradesPerRequest[subjectId][tradeId]
+            : delete tradesPerResource[subjectId][tradeId];
         emit TradeUpdated(tradeType, subjectId, tradeId);
     }
 
+    /* -------------------------------------------------------------------------- */
+    /*                               Approve Trade.                               */
+    /* -------------------------------------------------------------------------- */
+
     // Approve trades for `Request`
-    function approveResponse(
+    function approveTradeToRequest(
         uint256 subjectId,
         uint256 tradeId,
         uint256 amount
@@ -333,8 +368,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         Request storage r = requests[subjectId];
         if (r.from != msg.sender) revert NotOriginalPoster();
 
-        Trade storage t = responsesPerRequest[subjectId][tradeId];
-        if (t.currency == address(0xbeef)) revert InvalidTrade();
+        Trade storage t = tradesPerRequest[subjectId][tradeId];
         if (!t.approved) {
             // Aprove trade.
             t.approved = true;
@@ -348,18 +382,6 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
             // Update `t.currency` and `t.amount` for counterparty to `claim()` in the future.
             t.currency = r.currency;
             t.amount = amount;
-
-            // Mint engagement token for future utility.
-            _mint(
-                t.from,
-                encodeTokenId(
-                    address(this),
-                    TradeType.RESPONSE,
-                    uint40(subjectId),
-                    0
-                ),
-                1
-            );
 
             // Mint rights token to user for future `access()`, `dispute()`, and tranfsers.
             _mint(
@@ -379,7 +401,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
 
     // Approve trades for `Resource`
     // Approving staking trades is not allowed for staking does not transfer currency or credit
-    function approveExchange(
+    function approveTradeForResource(
         uint256 subjectId,
         uint256 tradeId,
         uint40 duration
@@ -387,25 +409,12 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         Resource storage r = resources[subjectId];
         if (r.from != msg.sender) revert NotOriginalPoster();
 
-        Trade storage t = exchangesPerResource[subjectId][tradeId];
-        if (t.currency == address(0xbeef)) revert InvalidTrade();
+        Trade storage t = tradesPerResource[subjectId][tradeId];
         if (!t.approved) {
             // Aprove trade.
             t.approved = true;
             t.timestamp = uint40(block.timestamp);
             t.duration = duration;
-
-            // Mint engagement token for future utility.
-            _mint(
-                t.from,
-                encodeTokenId(
-                    address(this),
-                    TradeType.RESPONSE,
-                    uint40(subjectId),
-                    0
-                ),
-                1
-            );
 
             // Mint rights token to `r.from` for future `claim()`, `dispute()`, and transfers().
             _mint(
@@ -418,7 +427,8 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
                 ),
                 1
             );
-            // Mint rights token to user for future `claim()` and transfers.
+
+            // Mint rights token to `t.from` for future `claim()` and transfers.
             _mint(
                 t.from,
                 encodeTokenId(
@@ -457,7 +467,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
 
         if (balanceOf(msg.sender, id) == 0) revert Unauthorized();
 
-        Trade storage t = exchangesPerResource[subjectId][tradeId];
+        Trade storage t = tradesPerResource[subjectId][tradeId];
         if (
             t.approved &&
             !t.paused &&
@@ -483,9 +493,8 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
 
         Trade storage t;
         (tradeType == TradeType.RESPONSE)
-            ? t = responsesPerRequest[subjectId][tradeId]
-            : t = exchangesPerResource[subjectId][tradeId];
-        if (t.currency == address(0xbeef)) revert InvalidTrade();
+            ? t = tradesPerRequest[subjectId][tradeId]
+            : t = tradesPerResource[subjectId][tradeId];
 
         unchecked {
             // When trade is approved and not in dispute, `t.amount` becomes claimable.
@@ -551,11 +560,10 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
             uint40(tradeId)
         );
 
-        Trade storage t = exchangesPerResource[subjectId][tradeId];
+        Trade storage t = tradesPerResource[subjectId][tradeId];
         Resource storage r = resources[subjectId];
 
         if (balanceOf(msg.sender, id) == 0) revert Unauthorized();
-        if (t.currency == address(0xbeef)) revert InvalidTrade();
 
         // Initiate dispute resolution.
         if (!t.paused) {
@@ -684,7 +692,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
             );
     }
 
-    // Decode asset as bulletin address and ask/resource id.
+    // Decode token id for bulletin address and ask/resource id.
     function decodeTokenId(
         uint256 id
     )
@@ -727,8 +735,8 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     ) external view returns (Trade memory) {
         return
             (tradeType == TradeType.RESPONSE)
-                ? responsesPerRequest[subjectId][tradeId]
-                : exchangesPerResource[subjectId][tradeId];
+                ? tradesPerRequest[subjectId][tradeId]
+                : tradesPerResource[subjectId][tradeId];
     }
 
     function getUnapprovedTradeIdByUser(
@@ -738,12 +746,12 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     ) public view returns (uint256 id) {
         Trade storage t;
         uint256 length = (tradeType == TradeType.RESPONSE)
-            ? responseIdsPerRequest[subjectId]
-            : exchangeIdsPerResource[subjectId];
+            ? tradeIdsPerRequest[subjectId]
+            : tradeIdsPerResource[subjectId];
         for (uint256 i = 1; i <= length; ++i) {
             (tradeType == TradeType.RESPONSE)
-                ? t = responsesPerRequest[subjectId][i]
-                : t = exchangesPerResource[subjectId][i];
+                ? t = tradesPerRequest[subjectId][i]
+                : t = tradesPerResource[subjectId][i];
             if (t.from == user)
                 if (!t.approved) id = i;
         }

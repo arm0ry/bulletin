@@ -233,7 +233,7 @@ contract BulletinTest is Test {
         });
         vm.prank(user);
         bulletin.trade(IBulletin.TradeType.RESPONSE, requestId, trade);
-        id = bulletin.responseIdsPerRequest(requestId);
+        id = bulletin.tradeIdsPerRequest(requestId);
     }
 
     function setupSimpleResponse(
@@ -255,7 +255,7 @@ contract BulletinTest is Test {
         });
         vm.prank(user);
         bulletin.trade(IBulletin.TradeType.RESPONSE, requestId, trade);
-        id = bulletin.responseIdsPerRequest(requestId);
+        id = bulletin.tradeIdsPerRequest(requestId);
     }
 
     function updateSimpleResponse(
@@ -302,7 +302,7 @@ contract BulletinTest is Test {
         });
         vm.prank(user);
         bulletin.trade(IBulletin.TradeType.EXCHANGE, resourceId, trade);
-        id = bulletin.exchangeIdsPerResource(resourceId);
+        id = bulletin.tradeIdsPerResource(resourceId);
     }
 
     function updateResourceExchange(
@@ -328,7 +328,7 @@ contract BulletinTest is Test {
         });
         vm.prank(user);
         bulletin.trade(IBulletin.TradeType.EXCHANGE, resourceId, trade);
-        id = bulletin.exchangeIdsPerResource(resourceId);
+        id = bulletin.tradeIdsPerResource(resourceId);
     }
 
     function setupCreditExchange(
@@ -350,30 +350,7 @@ contract BulletinTest is Test {
         });
         vm.prank(user);
         bulletin.trade(IBulletin.TradeType.EXCHANGE, resourceId, trade);
-        id = bulletin.exchangeIdsPerResource(resourceId);
-    }
-
-    function setupStaking(
-        IBulletin.TradeType tradeType,
-        address user,
-        uint256 subjectId,
-        uint256 amount
-    ) public payable returns (uint256 id) {
-        IBulletin.Trade memory trade = IBulletin.Trade({
-            approved: true,
-            paused: false,
-            timestamp: uint40(block.timestamp),
-            duration: 2 weeks,
-            from: user,
-            resource: bytes32(0),
-            currency: address(0xbeef),
-            amount: amount,
-            content: TEST,
-            data: BYTES
-        });
-        vm.prank(user);
-        bulletin.trade(tradeType, subjectId, trade);
-        id = bulletin.exchangeIdsPerResource(subjectId);
+        id = bulletin.tradeIdsPerResource(resourceId);
     }
 
     function setupCurrencyExchange(
@@ -400,7 +377,7 @@ contract BulletinTest is Test {
         });
         vm.prank(user);
         bulletin.trade(IBulletin.TradeType.EXCHANGE, resourceId, trade);
-        id = bulletin.exchangeIdsPerResource(resourceId);
+        id = bulletin.tradeIdsPerResource(resourceId);
     }
 
     function updateCurrencyExchange(
@@ -428,14 +405,14 @@ contract BulletinTest is Test {
 
     /// @notice Trades
 
-    function approveResponse(
+    function approveTradeToRequest(
         address op,
         uint256 requestId,
         uint256 responseId,
         uint256 amount
     ) public payable {
         vm.prank(op);
-        bulletin.approveResponse(requestId, responseId, amount);
+        bulletin.approveTradeToRequest(requestId, responseId, amount);
     }
 
     function withdrawResponse(
@@ -451,13 +428,17 @@ contract BulletinTest is Test {
         );
     }
 
-    function approveExchange(
+    function approveTradeForResource(
         address op,
         uint256 resourceId,
         uint256 exchangeId
     ) public payable {
         vm.prank(op);
-        bulletin.approveExchange(resourceId, exchangeId, type(uint40).max);
+        bulletin.approveTradeForResource(
+            resourceId,
+            exchangeId,
+            type(uint40).max
+        );
     }
 
     function withdrawExchange(
@@ -652,7 +633,7 @@ contract BulletinTest is Test {
         assertEq(mock.balanceOf(address(bulletin)), amount);
 
         // Approve exchange.
-        approveExchange(alice, resourceId, exchangeId);
+        approveTradeForResource(alice, resourceId, exchangeId);
 
         // Vendor claim and receive currency.
         vm.prank(alice);
@@ -692,7 +673,7 @@ contract BulletinTest is Test {
         assertEq(credit.limit, 10 ether);
         assertEq(credit.amount, 10 ether - amount);
 
-        approveExchange(alice, resourceId, exchangeId);
+        approveTradeForResource(alice, resourceId, exchangeId);
 
         string memory uri = bulletin.tokenURI(
             bulletin.encodeTokenId(
@@ -727,7 +708,7 @@ contract BulletinTest is Test {
         // Alice buys Bob's resource with credits.
         uint256 resourceId = resource(false, bob);
         uint256 exchangeId = setupCreditExchange(alice, resourceId, amount);
-        approveExchange(bob, resourceId, exchangeId);
+        approveTradeForResource(bob, resourceId, exchangeId);
 
         vm.prank(bob);
         bulletin.claim(IBulletin.TradeType.EXCHANGE, resourceId, exchangeId);
@@ -763,7 +744,7 @@ contract BulletinTest is Test {
         // Alice can still use credits to buy Bob's resource.
         uint256 resourceId = resource(false, bob);
         uint256 exchangeId = setupCreditExchange(alice, resourceId, amount);
-        approveExchange(bob, resourceId, exchangeId);
+        approveTradeForResource(bob, resourceId, exchangeId);
 
         vm.prank(bob);
         bulletin.claim(IBulletin.TradeType.EXCHANGE, resourceId, exchangeId);
@@ -779,7 +760,7 @@ contract BulletinTest is Test {
         assertEq(credit.limit, 5 ether);
         assertEq(credit.amount, 5 ether - amount);
 
-        approveExchange(alice, 1, exchangeId);
+        approveTradeForResource(alice, 1, exchangeId);
 
         vm.prank(alice);
         bulletin.claim(IBulletin.TradeType.EXCHANGE, 1, exchangeId);
@@ -788,88 +769,6 @@ contract BulletinTest is Test {
         assertEq(credit.limit, 2 ether);
         assertEq(credit.amount, 6 ether);
     }
-
-    // function test_Staking(uint256 amount) public payable {
-    //     vm.assume(2 ether > amount);
-    //     vm.assume(amount > 10_000);
-    //     test_ApproveCreditExchangeForResource_ByMember(2 ether);
-
-    //     // Staking
-    //     uint256 stakingId = setupStaking(
-    //         IBulletin.TradeType.EXCHANGE,
-    //         bob,
-    //         1,
-    //         amount
-    //     );
-    //     (
-    //         uint256 tradeId,
-    //         uint256 sId,
-    //         uint256 lastTrade,
-    //         uint256 lastStake
-    //     ) = Bulletin(address(bulletin)).getUnapprovedTradeIdByUser(
-    //             IBulletin.TradeType.EXCHANGE,
-    //             1,
-    //             bob
-    //         );
-    //     assertEq(tradeId, 0);
-    //     assertEq(stakingId, sId);
-    //     assertEq(lastTrade, 1);
-    //     assertEq(lastStake, 0);
-
-    //     IBulletin.Trade memory trade = bulletin.getTrade(
-    //         IBulletin.TradeType.EXCHANGE,
-    //         1,
-    //         stakingId
-    //     );
-    //     assertEq(trade.approved, false);
-    //     assertEq(trade.from, bob);
-    //     assertEq(trade.currency, address(0xbeef));
-    //     assertEq(trade.amount, amount);
-    //     assertEq(trade.resource, bytes32(block.timestamp));
-    //     assertEq(trade.content, TEST);
-    //     assertEq(trade.data, BYTES);
-    // }
-
-    // function test_UpdateStaking() public payable {
-    //     test_Staking(1 ether);
-
-    //     uint256 stakingId = setupStaking(
-    //         IBulletin.TradeType.EXCHANGE,
-    //         bob,
-    //         1,
-    //         2 ether
-    //     );
-
-    //     uint256 timestamp = block.timestamp;
-
-    //     (
-    //         uint256 tradeId,
-    //         uint256 sId,
-    //         uint256 lastTrade,
-    //         uint256 lastStake
-    //     ) = Bulletin(address(bulletin)).getUnapprovedTradeIdByUser(
-    //             IBulletin.TradeType.EXCHANGE,
-    //             1,
-    //             bob
-    //         );
-    //     assertEq(tradeId, 0);
-    //     assertEq(stakingId, sId);
-    //     assertEq(lastTrade, 1);
-    //     assertEq(lastStake, 0);
-
-    //     IBulletin.Trade memory trade = bulletin.getTrade(
-    //         IBulletin.TradeType.EXCHANGE,
-    //         1,
-    //         stakingId
-    //     );
-    //     assertEq(trade.approved, false);
-    //     assertEq(trade.from, bob);
-    //     assertEq(trade.currency, address(0xbeef));
-    //     assertEq(trade.amount, 2 ether);
-    //     assertEq(trade.resource, bytes32(timestamp));
-    //     assertEq(trade.content, TEST);
-    //     assertEq(trade.data, BYTES);
-    // }
 
     function test_ExchangeForResource_ApproveCurrency(
         uint256 amount
@@ -921,7 +820,7 @@ contract BulletinTest is Test {
         assertEq(_trade.content, TEST);
         assertEq(_trade.data, BYTES);
 
-        approveExchange(alice, resourceId, exchangeId);
+        approveTradeForResource(alice, resourceId, exchangeId);
 
         vm.prank(alice);
         bulletin.claim(IBulletin.TradeType.EXCHANGE, resourceId, exchangeId);
@@ -990,7 +889,7 @@ contract BulletinTest is Test {
         assertEq(_trade.content, TEST);
         assertEq(_trade.data, BYTES);
 
-        approveExchange(alice, resourceId, exchangeId);
+        approveTradeForResource(alice, resourceId, exchangeId);
         trade = bulletin.getTrade(
             IBulletin.TradeType.EXCHANGE,
             resourceId,
@@ -1082,7 +981,7 @@ contract BulletinTest is Test {
         bool approved = trade.approved;
 
         // approve trade
-        approveResponse(owner, requestId, tradeId, 0);
+        approveTradeToRequest(owner, requestId, tradeId, 0);
         trade = bulletin.getTrade(
             IBulletin.TradeType.RESPONSE,
             requestId,
@@ -1144,7 +1043,7 @@ contract BulletinTest is Test {
     ) public payable {
         vm.prank(owner);
         vm.expectRevert(IBulletin.NotOriginalPoster.selector);
-        bulletin.approveResponse(_requestId, _tradeId, 0);
+        bulletin.approveTradeToRequest(_requestId, _tradeId, 0);
     }
 
     function test_SimpleResponseToRequest_OneApprovalWithCurrency(
@@ -1162,7 +1061,7 @@ contract BulletinTest is Test {
         uint256 responseId = setupSimpleResponse(alice, requestId);
 
         // approve first trade
-        approveResponse(owner, requestId, responseId, amount);
+        approveTradeToRequest(owner, requestId, responseId, amount);
 
         vm.prank(alice);
         bulletin.claim(IBulletin.TradeType.RESPONSE, requestId, responseId);
@@ -1209,7 +1108,12 @@ contract BulletinTest is Test {
         uint256 responseId = setupSimpleResponse(alice, requestId);
 
         // approve first trade
-        approveResponse(owner, requestId, responseId, (amount * 20) / 100);
+        approveTradeToRequest(
+            owner,
+            requestId,
+            responseId,
+            (amount * 20) / 100
+        );
 
         uint256 tradeId = bulletin.getUnapprovedTradeIdByUser(
             IBulletin.TradeType.RESPONSE,
@@ -1247,7 +1151,12 @@ contract BulletinTest is Test {
         assertEq(tradeId, 2);
 
         // approve second trade
-        approveResponse(owner, requestId, responseId, (amount * 20) / 100);
+        approveTradeToRequest(
+            owner,
+            requestId,
+            responseId,
+            (amount * 20) / 100
+        );
 
         vm.prank(bob);
         bulletin.claim(IBulletin.TradeType.RESPONSE, requestId, responseId);

@@ -427,9 +427,17 @@ contract Governor {
         uint40 duration
     ) internal {
         if (action == Action.APPROVE_RESPONSE)
-            IBulletin(bulletin).approveResponse(subjectId, tradeId, amount);
+            IBulletin(bulletin).approveTradeToRequest(
+                subjectId,
+                tradeId,
+                amount
+            );
         else if (action == Action.APPROVE_EXCHANGE)
-            IBulletin(bulletin).approveExchange(subjectId, tradeId, duration);
+            IBulletin(bulletin).approveTradeForResource(
+                subjectId,
+                tradeId,
+                duration
+            );
         else return;
     }
 

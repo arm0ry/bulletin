@@ -132,10 +132,10 @@ contract Deploy is Script {
         // });
         // Bulletin(bulletinAddr).resourceByAgent(res);
 
-        Bulletin(bulletinAddr).approveResponse(1, 1, 2 ether);
-        Bulletin(bulletinAddr).approveResponse(1, 2, 2 ether);
-        Bulletin(bulletinAddr).approveResponse(2, 1, 2 ether);
-        Bulletin(bulletinAddr).approveResponse(2, 3, 2 ether);
+        Bulletin(bulletinAddr).approveTradeToRequest(1, 1, 2 ether);
+        Bulletin(bulletinAddr).approveTradeToRequest(1, 2, 2 ether);
+        Bulletin(bulletinAddr).approveTradeToRequest(2, 1, 2 ether);
+        Bulletin(bulletinAddr).approveTradeToRequest(2, 3, 2 ether);
 
         vm.stopBroadcast();
     }
