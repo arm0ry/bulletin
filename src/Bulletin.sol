@@ -137,6 +137,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
             if (r.drop != 0) refund(r.from, r.currency, r.drop);
 
             // Update new amount.
+            r.currency = _r.currency;
             r.drop = _r.drop;
         } else {
             if (!isAgent)
@@ -176,7 +177,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         if (id != 0) {
             Resource storage r = resources[id];
             if (!isAgent)
-                if (r.from != msg.sender) revert Unauthorized();
+                if (r.from != msg.sender) revert NotOriginalPoster();
 
             (_r.from != address(0)) ? r.from = _r.from : r.from;
             (bytes(_r.data).length > 0) ? r.data = _r.data : r.data;
@@ -626,6 +627,8 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
 
     // Deposit currency or credit.
     function deposit(address from, address currency, uint256 amount) internal {
+        if (currency == address(0xc0d) && amount > credits[from].amount)
+            revert InsufficientCredit();
         if (currency == address(0xc0d)) credits[from].amount -= amount;
         else route(currency, from, address(this), amount);
     }

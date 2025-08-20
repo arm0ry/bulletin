@@ -111,7 +111,6 @@ contract BulletinTest is Test {
     /// @notice Request
 
     function requestByCredit(
-        bool isOwner,
         address user,
         uint256 drop
     ) public payable returns (uint256 id) {
@@ -123,13 +122,12 @@ contract BulletinTest is Test {
             uri: TEST
         });
 
-        vm.prank((isOwner) ? owner : user);
+        vm.prank(user);
         bulletin.request(0, a);
         id = bulletin.requestId();
     }
 
     function requestByCurrency(
-        bool isOwner,
         address user,
         uint256 amount
     ) public payable returns (uint256 id) {
@@ -141,9 +139,9 @@ contract BulletinTest is Test {
             uri: TEST
         });
 
-        mockApprove((isOwner) ? owner : user, address(bulletin), amount);
+        mockApprove(user, address(bulletin), amount);
 
-        vm.prank((isOwner) ? owner : user);
+        vm.prank(user);
         bulletin.request(0, a);
         id = bulletin.requestId();
     }

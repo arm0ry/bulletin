@@ -325,7 +325,7 @@ contract BulletinTest_Approve is Test, BulletinTest {
 
         // setup request
         activate(address(bulletin), owner, owner, 10 ether);
-        uint256 requestId = requestByCurrency(true, owner, amount);
+        uint256 requestId = requestByCurrency(owner, amount);
 
         // setup resource
         activate(address(bulletin), owner, alice, 10 ether);
@@ -365,7 +365,7 @@ contract BulletinTest_Approve is Test, BulletinTest {
 
         // setup request
         activate(address(bulletin), owner, owner, 10 ether);
-        uint256 requestId = requestByCurrency(true, owner, amount);
+        uint256 requestId = requestByCurrency(owner, amount);
 
         // setup first trade
         uint256 responseId = setupSimpleResponse(alice, requestId);
@@ -409,7 +409,7 @@ contract BulletinTest_Approve is Test, BulletinTest {
 
         // setup ask
         activate(address(bulletin), owner, owner, 10 ether);
-        uint256 requestId = requestByCurrency(true, owner, amount);
+        uint256 requestId = requestByCurrency(owner, amount);
 
         // grant BULLETIN role
         grantRole(address(bulletin), owner, address(bulletin), BULLETIN_ROLE);
