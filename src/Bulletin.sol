@@ -36,13 +36,13 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
 
     // Mappings by `requestId`.
     mapping(uint256 => Request) internal requests;
-    mapping(uint256 => uint256) public responseIdsPerRequest;
-    mapping(uint256 => mapping(uint256 => Trade)) internal responsesPerRequest; // Reciprocal events.
+    mapping(uint256 => uint256) public tradeIdsPerRequest;
+    mapping(uint256 => mapping(uint256 => Trade)) internal tradesPerRequest; // Reciprocal events.
 
     // Mappings by `resourceId`.
     mapping(uint256 => Resource) internal resources;
-    mapping(uint256 => uint256) public exchangeIdsPerResource;
-    mapping(uint256 => mapping(uint256 => Trade)) internal exchangesPerResource; // Reciprocal events.
+    mapping(uint256 => uint256) public tradeIdsPerResource;
+    mapping(uint256 => mapping(uint256 => Trade)) internal tradesPerResource; // Reciprocal events.
 
     /* -------------------------------------------------------------------------- */
     /*                                 Modifiers.                                 */
@@ -97,14 +97,13 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     }
 
     /* -------------------------------------------------------------------------- */
-    /*                                   Engage.                                  */
+    /*                                    Post.                                   */
     /* -------------------------------------------------------------------------- */
 
     // Post or update a `Request`
     // Each request is an invitation to engage
     function request(uint256 id, Request calldata _r) external undenounced {
-        if (_r.from != msg.sender) revert Unauthorized();
-        _request(id, _r);
+        _request(false, id, _r);
     }
 
     // Post or update a `Request` by Agent
@@ -112,13 +111,13 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         uint256 id,
         Request calldata _r
     ) external onlyRoles(AGENT) {
-        _request(id, _r);
+        _request(true, id, _r);
     }
 
-    function _request(uint256 id, Request calldata _r) internal {
+    function _request(bool isAgent, uint256 id, Request calldata _r) internal {
         // Address with credit balance above a credit limit threshold may post `Request`.
         if (creditLimitToAddRequest > credits[_r.from].limit)
-            revert Unauthorized();
+            revert NotEnoughCreditToPost();
 
         // Deposit.
         if (_r.drop == 0) revert DropRequired();
@@ -127,6 +126,10 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         if (id != 0) {
             // Modify previous `Request`.
             Request storage r = requests[id];
+
+            if (!isAgent)
+                if (r.from != msg.sender) revert NotOriginalPoster();
+
             (bytes(_r.data).length > 0) ? r.data = _r.data : r.data;
             (bytes(_r.uri).length > 0) ? r.uri = _r.uri : r.uri;
 
@@ -136,6 +139,9 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
             // Update new amount.
             r.drop = _r.drop;
         } else {
+            if (!isAgent)
+                if (_r.from != msg.sender) revert Unauthorized();
+
             // Add new request.
             unchecked {
                 requests[id = ++requestId] = _r;
@@ -165,7 +171,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     ) internal {
         // Address with credit balance above a credit limit threshold may post `Resource`.
         if (creditLimitToAddResource > credits[_r.from].limit)
-            revert Unauthorized();
+            revert NotEnoughCreditToPost();
 
         if (id != 0) {
             Resource storage r = resources[id];
@@ -195,8 +201,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         uint256 subjectId,
         Trade calldata _t
     ) external undenounced {
-        if (_t.from != msg.sender) revert Unauthorized();
-        _trade(tradeType, subjectId, _t);
+        _trade(false, tradeType, subjectId, _t);
     }
 
     // Post a `Trade` by Agent
@@ -205,21 +210,24 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         uint256 subjectId,
         Trade calldata _t
     ) external onlyRoles(AGENT) {
-        _trade(tradeType, subjectId, _t);
+        _trade(true, tradeType, subjectId, _t);
     }
 
     function _trade(
+        bool isAgent,
         TradeType tradeType,
         uint256 subjectId,
         Trade calldata _t
     ) internal {
-        if (_t.resource != 0 && _t.currency != address(0xbeef)) {
+        if (_t.resource != 0) {
             (address c, uint256 id) = decodeAsset(_t.resource);
             Resource memory r = IBulletin(c).getResource(id);
             if (r.from != _t.from) revert NotOriginalPoster();
-        } else deposit(_t.from, _t.currency, _t.amount);
+        }
 
-        (uint256 tradeId, uint256 stakeId, , ) = getTradeAndStakeIdsByUser(
+        if (_t.amount > 0) deposit(_t.from, _t.currency, _t.amount);
+
+        uint256 tradeId = getUnapprovedTradeIdByUser(
             tradeType,
             subjectId,
             _t.from
@@ -227,12 +235,14 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
 
         Trade storage t;
         unchecked {
-            if (_t.currency != address(0xbeef) && tradeId != 0) {
-                // Modify previous non-staking trade.
+            if (tradeId != 0) {
+                // Modify previous unapproved trade.
                 t = (tradeType == TradeType.RESPONSE)
-                    ? responsesPerRequest[subjectId][tradeId]
-                    : exchangesPerResource[subjectId][tradeId];
-                if (t.approved) revert Approved();
+                    ? tradesPerRequest[subjectId][tradeId]
+                    : tradesPerResource[subjectId][tradeId];
+
+                if (!isAgent)
+                    if (t.from != msg.sender) revert Unauthorized();
 
                 // Refund.
                 if (t.amount != 0) refund(t.from, t.currency, t.amount);
@@ -240,40 +250,24 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
                 // Update.
                 t.amount = _t.amount;
                 (_t.resource > 0) ? t.resource = _t.resource : t.resource;
-            } else if (_t.currency == address(0xbeef) && stakeId != 0) {
-                // TODO: consider a generic staking() func to store all stakes and so stake is not bound to only specific resource / request
-                // TODO: possibly store stake usage with struct Credit{}
-                // Modify previous staking trades.
-                t = (tradeType == TradeType.RESPONSE)
-                    ? responsesPerRequest[subjectId][stakeId]
-                    : exchangesPerResource[subjectId][stakeId];
-
-                // Refund.
-                if (t.amount != 0) refund(t.from, t.currency, t.amount);
-
-                // Update.
-                t.amount = _t.amount;
-                t.timestamp = uint40(block.timestamp);
             } else {
-                // Add a non-staking or staking trade.
+                // Add a new trade.
                 t = (tradeType == TradeType.RESPONSE)
-                    ? responsesPerRequest[subjectId][
-                        ++responseIdsPerRequest[subjectId]
+                    ? tradesPerRequest[subjectId][
+                        ++tradeIdsPerRequest[subjectId]
                     ]
-                    : exchangesPerResource[subjectId][
-                        ++exchangeIdsPerResource[subjectId]
+                    : tradesPerResource[subjectId][
+                        ++tradeIdsPerResource[subjectId]
                     ];
+
+                if (!isAgent)
+                    if (_t.from != msg.sender) revert Unauthorized();
 
                 // Store.
                 t.from = _t.from;
                 t.currency = _t.currency;
                 t.amount = _t.amount;
-
-                // Store `block.timestamp` when staking, otherwise store resource hash as supplied.
-                if (_t.currency == address(0xbeef))
-                    t.timestamp = uint40(block.timestamp);
-                else if (_t.resource > 0) t.resource = _t.resource;
-                else t.resource;
+                (_t.resource > 0) ? t.resource = _t.resource : t.resource;
             }
         }
 
@@ -285,7 +279,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     }
 
     /* -------------------------------------------------------------------------- */
-    /*                             Manage Engagement.                             */
+    /*                                  Withdraw.                                 */
     /* -------------------------------------------------------------------------- */
 
     /// @notice Request
@@ -298,7 +292,17 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         // Refund.
         if (r.drop != 0) refund(r.from, r.currency, r.drop);
 
-        // todo: refund all staking and unapproved trades.
+        // Refund unapproved trades.
+        Trade storage t;
+        uint256 length = tradeIdsPerRequest[id];
+        for (uint256 i = 1; i <= length; ++i) {
+            t = tradesPerRequest[id][i];
+            if (!t.approved && t.amount > 0) {
+                refund(t.from, t.currency, t.amount);
+                delete tradesPerRequest[id][i];
+            }
+        }
+
         delete requests[id];
         emit RequestUpdated(id);
     }
@@ -310,7 +314,16 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         if (r.from != msg.sender && rolesOf(msg.sender) != AGENT)
             revert NotOriginalPoster();
 
-        // todo: refund all staking and unapproved trades.
+        // Refund unapproved trades.
+        Trade storage t;
+        uint256 length = tradeIdsPerResource[id];
+        for (uint256 i = 1; i <= length; ++i) {
+            t = tradesPerResource[id][i];
+            if (!t.approved && t.amount > 0) {
+                refund(t.from, t.currency, t.amount);
+                delete tradesPerResource[id][i];
+            }
+        }
 
         // Withdraw.
         delete resources[id];
@@ -326,24 +339,27 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     ) external {
         Trade storage t;
         (tradeType == TradeType.RESPONSE)
-            ? t = responsesPerRequest[subjectId][tradeId]
-            : t = exchangesPerResource[subjectId][tradeId];
+            ? t = tradesPerRequest[subjectId][tradeId]
+            : t = tradesPerResource[subjectId][tradeId];
         if (t.approved) revert Approved();
-        if (t.from != msg.sender && rolesOf(msg.sender) != AGENT)
-            revert NotOriginalPoster();
+        if (t.from != msg.sender) revert NotOriginalPoster();
 
         // Refund.
         refund(t.from, t.currency, t.amount);
 
         // Remove trade.
         (tradeType == TradeType.RESPONSE)
-            ? delete responsesPerRequest[subjectId][tradeId]
-            : delete exchangesPerResource[subjectId][tradeId];
+            ? delete tradesPerRequest[subjectId][tradeId]
+            : delete tradesPerResource[subjectId][tradeId];
         emit TradeUpdated(tradeType, subjectId, tradeId);
     }
 
+    /* -------------------------------------------------------------------------- */
+    /*                                  Approve.                                  */
+    /* -------------------------------------------------------------------------- */
+
     // Approve trades for `Request`
-    function approveResponse(
+    function approveTradeToRequest(
         uint256 subjectId,
         uint256 tradeId,
         uint256 amount
@@ -351,8 +367,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         Request storage r = requests[subjectId];
         if (r.from != msg.sender) revert NotOriginalPoster();
 
-        Trade storage t = responsesPerRequest[subjectId][tradeId];
-        if (t.currency == address(0xbeef)) revert InvalidTrade();
+        Trade storage t = tradesPerRequest[subjectId][tradeId];
         if (!t.approved) {
             // Aprove trade.
             t.approved = true;
@@ -367,19 +382,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
             t.currency = r.currency;
             t.amount = amount;
 
-            // Mint engagement token for future utility.
-            _mint(
-                t.from,
-                encodeTokenId(
-                    address(this),
-                    TradeType.RESPONSE,
-                    uint40(subjectId),
-                    0
-                ),
-                1
-            );
-
-            // Mint credit token to user for future `access()`, `dispute()`, and tranfsers.
+            // Mint rights token to user for future `access()`, `dispute()`, and tranfsers.
             _mint(
                 t.from,
                 encodeTokenId(
@@ -397,7 +400,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
 
     // Approve trades for `Resource`
     // Approving staking trades is not allowed for staking does not transfer currency or credit
-    function approveExchange(
+    function approveTradeForResource(
         uint256 subjectId,
         uint256 tradeId,
         uint40 duration
@@ -405,27 +408,14 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         Resource storage r = resources[subjectId];
         if (r.from != msg.sender) revert NotOriginalPoster();
 
-        Trade storage t = exchangesPerResource[subjectId][tradeId];
-        if (t.currency == address(0xbeef)) revert InvalidTrade();
+        Trade storage t = tradesPerResource[subjectId][tradeId];
         if (!t.approved) {
             // Aprove trade.
             t.approved = true;
             t.timestamp = uint40(block.timestamp);
             t.duration = duration;
 
-            // Mint engagement token for future utility.
-            _mint(
-                t.from,
-                encodeTokenId(
-                    address(this),
-                    TradeType.RESPONSE,
-                    uint40(subjectId),
-                    0
-                ),
-                1
-            );
-
-            // Mint credit token to `r.from` for future `claim()`, `dispute()`, and transfers().
+            // Mint rights token to `r.from` for future `claim()`, `dispute()`, and transfers().
             _mint(
                 r.from,
                 encodeTokenId(
@@ -436,7 +426,8 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
                 ),
                 1
             );
-            // Mint credit token to user for future `claim()` and transfers.
+
+            // Mint rights token to `t.from` for future `claim()` and transfers.
             _mint(
                 t.from,
                 encodeTokenId(
@@ -462,7 +453,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     }
 
     /* -------------------------------------------------------------------------- */
-    /*                           Post-trade Engagement.                           */
+    /*                                   Engage.                                  */
     /* -------------------------------------------------------------------------- */
 
     function access(uint256 subjectId, uint256 tradeId) external {
@@ -475,7 +466,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
 
         if (balanceOf(msg.sender, id) == 0) revert Unauthorized();
 
-        Trade storage t = exchangesPerResource[subjectId][tradeId];
+        Trade storage t = tradesPerResource[subjectId][tradeId];
         if (
             t.approved &&
             !t.paused &&
@@ -501,9 +492,8 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
 
         Trade storage t;
         (tradeType == TradeType.RESPONSE)
-            ? t = responsesPerRequest[subjectId][tradeId]
-            : t = exchangesPerResource[subjectId][tradeId];
-        if (t.currency == address(0xbeef)) revert InvalidTrade();
+            ? t = tradesPerRequest[subjectId][tradeId]
+            : t = tradesPerResource[subjectId][tradeId];
 
         unchecked {
             // When trade is approved and not in dispute, `t.amount` becomes claimable.
@@ -569,11 +559,10 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
             uint40(tradeId)
         );
 
-        Trade storage t = exchangesPerResource[subjectId][tradeId];
+        Trade storage t = tradesPerResource[subjectId][tradeId];
         Resource storage r = resources[subjectId];
 
         if (balanceOf(msg.sender, id) == 0) revert Unauthorized();
-        if (t.currency == address(0xbeef)) revert InvalidTrade();
 
         // Initiate dispute resolution.
         if (!t.paused) {
@@ -619,14 +608,6 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         }
     }
 
-    function tokenURI(uint256 id) public view override returns (string memory) {
-        (, TradeType tradeType, uint40 subjectId, ) = decodeTokenId(id);
-        return
-            (tradeType == TradeType.RESPONSE)
-                ? requests[subjectId].uri
-                : resources[subjectId].uri;
-    }
-
     /* -------------------------------------------------------------------------- */
     /*                                  Internal.                                 */
     /* -------------------------------------------------------------------------- */
@@ -638,43 +619,21 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         address to,
         uint256 amount
     ) internal {
-        if (currency == address(0xc0d)) build(to, amount);
-        else if (currency != address(0))
-            (from == address(this))
-                ? SafeTransferLib.safeTransfer(currency, to, amount)
-                : SafeTransferLib.safeTransferFrom(currency, from, to, amount);
-        else return;
-    }
-
-    // Build credit.
-    function build(address user, uint256 amount) internal {
-        unchecked {
-            credits[user].amount += amount;
-        }
+        (from == address(this))
+            ? SafeTransferLib.safeTransfer(currency, to, amount)
+            : SafeTransferLib.safeTransferFrom(currency, from, to, amount);
     }
 
     // Deposit currency or credit.
     function deposit(address from, address currency, uint256 amount) internal {
-        Credit storage c = credits[from];
-        if (
-            (currency == address(0xbeef) || currency == address(0xc0d)) &&
-            amount != 0
-        ) {
-            // Deposit credit.
-            c.amount -= amount;
-
-            // Otherwise, deposit currency.
-        } else if (amount != 0) route(currency, from, address(this), amount);
-        else {}
+        if (currency == address(0xc0d)) credits[from].amount -= amount;
+        else route(currency, from, address(this), amount);
     }
 
     // Refund currency or credit.
     function refund(address to, address currency, uint256 amount) internal {
-        if (currency == address(0xbeef) || currency == address(0xc0d))
-            build(to, amount);
-        else if (currency != address(0))
-            route(currency, address(this), to, amount);
-        else {}
+        if (currency == address(0xc0d)) credits[to].amount += amount;
+        else route(currency, address(this), to, amount);
     }
 
     function _beforeTokenTransfer(
@@ -724,7 +683,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
             );
     }
 
-    // Decode asset as bulletin address and ask/resource id.
+    // Decode token id for bulletin address and ask/resource id.
     function decodeTokenId(
         uint256 id
     )
@@ -767,44 +726,37 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     ) external view returns (Trade memory) {
         return
             (tradeType == TradeType.RESPONSE)
-                ? responsesPerRequest[subjectId][tradeId]
-                : exchangesPerResource[subjectId][tradeId];
+                ? tradesPerRequest[subjectId][tradeId]
+                : tradesPerResource[subjectId][tradeId];
     }
 
-    // An address may have multiple exchange and multiple staking trades
-    function getTradeAndStakeIdsByUser(
+    function getUnapprovedTradeIdByUser(
         TradeType tradeType,
         uint256 subjectId,
         address user
-    )
-        public
-        view
-        returns (
-            uint256 tradeId,
-            uint256 stakeId,
-            uint256 lastTrade,
-            uint256 lastStake
-        )
-    {
+    ) public view returns (uint256 id) {
         Trade storage t;
         uint256 length = (tradeType == TradeType.RESPONSE)
-            ? responseIdsPerRequest[subjectId]
-            : exchangeIdsPerResource[subjectId];
+            ? tradeIdsPerRequest[subjectId]
+            : tradeIdsPerResource[subjectId];
         for (uint256 i = 1; i <= length; ++i) {
             (tradeType == TradeType.RESPONSE)
-                ? t = responsesPerRequest[subjectId][i]
-                : t = exchangesPerResource[subjectId][i];
-            if (t.from == user) {
-                if (t.currency == address(0xbeef) && !t.approved) stakeId = i;
-                else if (t.currency == address(0xbeef))
-                    lastStake = i; // todo: this suggests staking may be approved but
-                else if (!t.approved) tradeId = i;
-                else lastTrade = i;
-            } else continue;
+                ? t = tradesPerRequest[subjectId][i]
+                : t = tradesPerResource[subjectId][i];
+            if (t.from == user)
+                if (!t.approved) id = i;
         }
     }
 
     function getCredit(address user) external view returns (Credit memory) {
         return credits[user];
+    }
+
+    function tokenURI(uint256 id) public view override returns (string memory) {
+        (, TradeType tradeType, uint40 subjectId, ) = decodeTokenId(id);
+        return
+            (tradeType == TradeType.RESPONSE)
+                ? requests[subjectId].uri
+                : resources[subjectId].uri;
     }
 }

@@ -49,10 +49,10 @@ interface IBulletin {
         bool approved;
         bool paused;
         uint40 timestamp; // reserved for `access()` and `claim()`
-        uint40 duration;
+        uint40 duration; // reserved for `access()` and `claim()`
         address from;
         bytes32 resource;
-        address currency; // `0xbeef` reserved for staking, `address(0)` reserved for credit uses
+        address currency; // `address(0xc0d)` reserved for credit
         uint256 amount;
         string content;
         bytes data; // reserved for responses, externalities, etc.
@@ -81,6 +81,7 @@ interface IBulletin {
     error InvalidTransfer();
     error NotYetActivated();
     error NotOriginalPoster();
+    error NotEnoughCreditToPost();
 
     /* -------------------------------------------------------------------------- */
     /*                                   Credit.                                  */
@@ -109,12 +110,12 @@ interface IBulletin {
         uint256 tradeId
     ) external;
 
-    function approveResponse(
+    function approveTradeToRequest(
         uint256 requestId,
         uint256 responseId,
         uint256 amount
     ) external;
-    function approveExchange(
+    function approveTradeForResource(
         uint256 resourceId,
         uint256 exchangeId,
         uint40 deadline
