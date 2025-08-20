@@ -81,6 +81,7 @@ interface IBulletin {
     error InvalidTransfer();
     error NotYetActivated();
     error NotOriginalPoster();
+    error NotEnoughCreditToPost();
 
     /* -------------------------------------------------------------------------- */
     /*                                   Credit.                                  */

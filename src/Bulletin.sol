@@ -97,7 +97,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     }
 
     /* -------------------------------------------------------------------------- */
-    /*                                   Engage.                                  */
+    /*                                    Post.                                   */
     /* -------------------------------------------------------------------------- */
 
     // Post or update a `Request`
@@ -117,7 +117,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     function _request(bool isAgent, uint256 id, Request calldata _r) internal {
         // Address with credit balance above a credit limit threshold may post `Request`.
         if (creditLimitToAddRequest > credits[_r.from].limit)
-            revert Unauthorized();
+            revert NotEnoughCreditToPost();
 
         // Deposit.
         if (_r.drop == 0) revert DropRequired();
@@ -128,7 +128,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
             Request storage r = requests[id];
 
             if (!isAgent)
-                if (r.from != msg.sender) revert Unauthorized();
+                if (r.from != msg.sender) revert NotOriginalPoster();
 
             (bytes(_r.data).length > 0) ? r.data = _r.data : r.data;
             (bytes(_r.uri).length > 0) ? r.uri = _r.uri : r.uri;
@@ -171,7 +171,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     ) internal {
         // Address with credit balance above a credit limit threshold may post `Resource`.
         if (creditLimitToAddResource > credits[_r.from].limit)
-            revert Unauthorized();
+            revert NotEnoughCreditToPost();
 
         if (id != 0) {
             Resource storage r = resources[id];
@@ -342,8 +342,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
             ? t = tradesPerRequest[subjectId][tradeId]
             : t = tradesPerResource[subjectId][tradeId];
         if (t.approved) revert Approved();
-        if (t.from != msg.sender && rolesOf(msg.sender) != AGENT)
-            revert NotOriginalPoster();
+        if (t.from != msg.sender) revert NotOriginalPoster();
 
         // Refund.
         refund(t.from, t.currency, t.amount);
@@ -356,7 +355,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     }
 
     /* -------------------------------------------------------------------------- */
-    /*                               Approve Trade.                               */
+    /*                                  Approve.                                  */
     /* -------------------------------------------------------------------------- */
 
     // Approve trades for `Request`
@@ -454,7 +453,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     }
 
     /* -------------------------------------------------------------------------- */
-    /*                           Post-trade Engagement.                           */
+    /*                                   Engage.                                  */
     /* -------------------------------------------------------------------------- */
 
     function access(uint256 subjectId, uint256 tradeId) external {
@@ -609,14 +608,6 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         }
     }
 
-    function tokenURI(uint256 id) public view override returns (string memory) {
-        (, TradeType tradeType, uint40 subjectId, ) = decodeTokenId(id);
-        return
-            (tradeType == TradeType.RESPONSE)
-                ? requests[subjectId].uri
-                : resources[subjectId].uri;
-    }
-
     /* -------------------------------------------------------------------------- */
     /*                                  Internal.                                 */
     /* -------------------------------------------------------------------------- */
@@ -759,5 +750,13 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
 
     function getCredit(address user) external view returns (Credit memory) {
         return credits[user];
+    }
+
+    function tokenURI(uint256 id) public view override returns (string memory) {
+        (, TradeType tradeType, uint40 subjectId, ) = decodeTokenId(id);
+        return
+            (tradeType == TradeType.RESPONSE)
+                ? requests[subjectId].uri
+                : resources[subjectId].uri;
     }
 }
