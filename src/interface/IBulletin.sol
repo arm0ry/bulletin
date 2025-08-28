@@ -37,7 +37,6 @@ interface IBulletin {
      */
     struct Resource {
         address from;
-        // uint48 supply;
         bytes data; // title, detail
         string uri;
     }
@@ -82,6 +81,7 @@ interface IBulletin {
     error NotYetActivated();
     error NotOriginalPoster();
     error InsufficientCredit();
+    error NotOwnerOfResource();
     error NotEnoughCreditToPost();
 
     /* -------------------------------------------------------------------------- */

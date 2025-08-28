@@ -110,11 +110,13 @@ contract BulletinTest is Test {
 
     /// @notice Request
 
-    function requestByCredit(
+    function postRequestWithCredit(
         address user,
+        uint256 credit,
         uint256 drop
     ) public payable returns (uint256 id) {
-        IBulletin.Request memory a = IBulletin.Request({
+        activate(address(bulletin), owner, user, credit);
+        IBulletin.Request memory r = IBulletin.Request({
             from: user,
             currency: address(0xc0d),
             drop: drop,
@@ -123,26 +125,28 @@ contract BulletinTest is Test {
         });
 
         vm.prank(user);
-        bulletin.request(0, a);
+        bulletin.request(0, r);
         id = bulletin.requestId();
     }
 
-    function requestByCurrency(
+    function postRequestWithCurrency(
         address user,
-        uint256 amount
+        uint256 mint,
+        uint256 drop
     ) public payable returns (uint256 id) {
-        IBulletin.Request memory a = IBulletin.Request({
+        mock.mint(owner, mint);
+        mockApprove(user, address(bulletin), drop);
+
+        IBulletin.Request memory r = IBulletin.Request({
             from: user,
             currency: address(mock),
-            drop: amount,
+            drop: drop,
             data: BYTES,
             uri: TEST
         });
 
-        mockApprove(user, address(bulletin), amount);
-
         vm.prank(user);
-        bulletin.request(0, a);
+        bulletin.request(0, r);
         id = bulletin.requestId();
     }
 
@@ -157,8 +161,8 @@ contract BulletinTest is Test {
             from: op,
             currency: currency,
             drop: amount,
-            data: BYTES,
-            uri: TEST
+            data: BYTES2,
+            uri: TEST2
         });
         vm.prank(op);
         bulletin.request(requestId, r);
@@ -171,6 +175,18 @@ contract BulletinTest is Test {
     }
 
     /// @notice Resource
+
+    function postResource(address user) public payable returns (uint256 id) {
+        IBulletin.Resource memory r = IBulletin.Resource({
+            from: user,
+            data: BYTES,
+            uri: TEST
+        });
+
+        vm.prank(user);
+        bulletin.resource(0, r);
+        id = bulletin.resourceId();
+    }
 
     function resource(
         bool isOwner,
@@ -195,8 +211,8 @@ contract BulletinTest is Test {
         vm.warp(block.timestamp + 10);
         IBulletin.Resource memory r = IBulletin.Resource({
             from: newOwner,
-            data: BYTES,
-            uri: TEST
+            data: BYTES2,
+            uri: TEST2
         });
         vm.prank(op);
         bulletin.resource(resourceId, r);
@@ -234,6 +250,144 @@ contract BulletinTest is Test {
         id = bulletin.tradeIdsPerRequest(requestId);
     }
 
+    function postTradeWithPromise(
+        IBulletin.TradeType tradeType,
+        address user,
+        uint256 subjectId,
+        string memory content,
+        bytes memory data
+    ) public payable returns (uint256 id) {
+        bytes32 r;
+        IBulletin.Trade memory trade = IBulletin.Trade({
+            approved: true,
+            paused: true,
+            timestamp: uint40(block.timestamp),
+            duration: 2 weeks,
+            from: user,
+            resource: r,
+            currency: address(0),
+            amount: 0,
+            content: content,
+            data: data
+        });
+        vm.prank(user);
+        bulletin.trade(tradeType, subjectId, trade);
+        id = (tradeType == IBulletin.TradeType.RESPONSE)
+            ? bulletin.tradeIdsPerRequest(subjectId)
+            : bulletin.tradeIdsPerResource(subjectId);
+    }
+
+    function postTradeWithResource(
+        IBulletin.TradeType tradeType,
+        address user,
+        uint256 subjectId,
+        address userBulletin,
+        uint256 userResourceId
+    ) public payable returns (uint256 id) {
+        IBulletin.Trade memory trade = IBulletin.Trade({
+            approved: true,
+            paused: false,
+            timestamp: uint40(block.timestamp),
+            duration: 2 weeks,
+            from: user,
+            resource: bulletin.encodeAsset(
+                address(userBulletin),
+                uint96(userResourceId)
+            ),
+            currency: address(0),
+            amount: 0,
+            content: TEST,
+            data: BYTES
+        });
+        vm.prank(user);
+        bulletin.trade(tradeType, subjectId, trade);
+        id = (tradeType == IBulletin.TradeType.RESPONSE)
+            ? bulletin.tradeIdsPerRequest(subjectId)
+            : bulletin.tradeIdsPerResource(subjectId);
+    }
+
+    function postTradeWithResourceAndCurrency(
+        IBulletin.TradeType tradeType,
+        address user,
+        uint256 subjectId,
+        address userBulletin,
+        uint256 userResourceId,
+        address currency,
+        uint256 amount
+    ) public payable returns (uint256 id) {
+        IBulletin.Trade memory trade = IBulletin.Trade({
+            approved: true,
+            paused: false,
+            timestamp: uint40(block.timestamp),
+            duration: 2 weeks,
+            from: user,
+            resource: bulletin.encodeAsset(
+                address(userBulletin),
+                uint96(userResourceId)
+            ),
+            currency: currency,
+            amount: amount,
+            content: TEST,
+            data: BYTES
+        });
+        vm.prank(user);
+        bulletin.trade(tradeType, subjectId, trade);
+        id = (tradeType == IBulletin.TradeType.RESPONSE)
+            ? bulletin.tradeIdsPerRequest(subjectId)
+            : bulletin.tradeIdsPerResource(subjectId);
+    }
+
+    function postTradeWithCurrency(
+        IBulletin.TradeType tradeType,
+        address user,
+        uint256 subjectId,
+        address currency,
+        uint256 amount
+    ) public payable returns (uint256 id) {
+        bytes32 r;
+        IBulletin.Trade memory trade = IBulletin.Trade({
+            approved: true,
+            paused: true,
+            timestamp: uint40(block.timestamp),
+            duration: 2 weeks,
+            from: user,
+            resource: r,
+            currency: currency,
+            amount: amount,
+            content: TEST,
+            data: BYTES
+        });
+        vm.prank(user);
+        bulletin.trade(tradeType, subjectId, trade);
+        id = (tradeType == IBulletin.TradeType.RESPONSE)
+            ? bulletin.tradeIdsPerRequest(subjectId)
+            : bulletin.tradeIdsPerResource(subjectId);
+    }
+
+    function updateTrade(
+        IBulletin.TradeType tradeType,
+        address user,
+        uint256 subjectId,
+        bytes32 r,
+        address currency,
+        uint256 amount
+    ) public payable {
+        IBulletin.Trade memory trade = IBulletin.Trade({
+            approved: true,
+            paused: true,
+            timestamp: uint40(block.timestamp),
+            duration: 2 weeks,
+            from: user,
+            resource: r,
+            currency: currency,
+            amount: amount,
+            content: TEST2,
+            data: BYTES2
+        });
+        vm.prank(user);
+        bulletin.trade(tradeType, subjectId, trade);
+    }
+
     function setupSimpleResponse(
         address user,
         uint256 requestId
@@ -256,27 +410,6 @@ contract BulletinTest is Test {
         id = bulletin.tradeIdsPerRequest(requestId);
     }
 
-    function updateSimpleResponse(
-        address user,
-        uint256 requestId
-    ) public payable {
-        bytes32 r;
-        IBulletin.Trade memory trade = IBulletin.Trade({
-            approved: true,
-            paused: false,
-            timestamp: uint40(block.timestamp),
-            duration: 2 weeks,
-            from: user,
-            resource: r,
-            currency: address(0),
-            amount: 0,
-            content: TEST2,
-            data: BYTES2
-        });
-        vm.prank(user);
-        bulletin.trade(IBulletin.TradeType.RESPONSE, requestId, trade);
-    }
-
     function setupResourceExchange(
         address user,
         uint256 resourceId,
@@ -297,32 +430,6 @@ contract BulletinTest is Test {
             amount: 0,
             content: TEST,
             data: BYTES
-        });
-        vm.prank(user);
-        bulletin.trade(IBulletin.TradeType.EXCHANGE, resourceId, trade);
-        id = bulletin.tradeIdsPerResource(resourceId);
-    }
-
-    function updateResourceExchange(
-        address user,
-        uint256 resourceId,
-        address userBulletin,
-        uint256 userResourceId
-    ) public payable returns (uint256 id) {
-        IBulletin.Trade memory trade = IBulletin.Trade({
-            approved: true,
-            paused: false,
-            timestamp: uint40(block.timestamp),
-            duration: 2 weeks,
-            from: user,
-            resource: bulletin.encodeAsset(
-                address(userBulletin),
-                uint96(userResourceId)
-            ),
-            currency: address(0),
-            amount: 0,
-            content: TEST2,
-            data: BYTES2
         });
         vm.prank(user);
         bulletin.trade(IBulletin.TradeType.EXCHANGE, resourceId, trade);
@@ -376,29 +483,6 @@ contract BulletinTest is Test {
         vm.prank(user);
         bulletin.trade(IBulletin.TradeType.EXCHANGE, resourceId, trade);
         id = bulletin.tradeIdsPerResource(resourceId);
-    }
-
-    function updateCurrencyExchange(
-        address user,
-        uint256 resourceId,
-        address currency,
-        uint256 amount
-    ) public payable {
-        bytes32 r;
-        IBulletin.Trade memory trade = IBulletin.Trade({
-            approved: true,
-            paused: false,
-            timestamp: uint40(block.timestamp),
-            duration: 2 weeks,
-            from: user,
-            resource: r,
-            currency: currency,
-            amount: amount,
-            content: TEST2,
-            data: BYTES2
-        });
-        vm.prank(user);
-        bulletin.trade(IBulletin.TradeType.EXCHANGE, resourceId, trade);
     }
 
     /// @notice Trades

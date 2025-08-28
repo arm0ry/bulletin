@@ -223,7 +223,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         if (_t.resource != 0) {
             (address c, uint256 id) = decodeAsset(_t.resource);
             Resource memory r = IBulletin(c).getResource(id);
-            if (r.from != _t.from) revert NotOriginalPoster();
+            if (r.from != _t.from) revert NotOwnerOfResource();
         }
 
         if (_t.amount > 0) deposit(_t.from, _t.currency, _t.amount);
@@ -243,12 +243,13 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
                     : tradesPerResource[subjectId][tradeId];
 
                 if (!isAgent)
-                    if (t.from != msg.sender) revert Unauthorized();
+                    if (t.from != msg.sender) revert NotOriginalPoster();
 
                 // Refund.
                 if (t.amount != 0) refund(t.from, t.currency, t.amount);
 
                 // Update.
+                t.currency = _t.currency;
                 t.amount = _t.amount;
                 (_t.resource > 0) ? t.resource = _t.resource : t.resource;
             } else {
@@ -266,6 +267,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
 
                 // Store.
                 t.from = _t.from;
+                t.timestamp = uint40(block.timestamp);
                 t.currency = _t.currency;
                 t.amount = _t.amount;
                 (_t.resource > 0) ? t.resource = _t.resource : t.resource;

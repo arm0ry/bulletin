@@ -16,8 +16,7 @@ import {Ownable} from "lib/solady/src/auth/Ownable.sol";
 
 contract BulletinTest_Withdraw is Test, BulletinTest {
     function test_Request_Withdraw() public payable {
-        activate(address(bulletin), owner, owner, 10 ether);
-        uint256 requestId = requestByCredit(owner, 5 ether);
+        uint256 requestId = postRequestWithCredit(owner, 10 ether, 5 ether);
 
         withdrawRequest(owner, requestId);
 
@@ -34,8 +33,7 @@ contract BulletinTest_Withdraw is Test, BulletinTest {
         vm.assume(1e20 > amount);
         vm.assume(amount > 0);
         mock.mint(owner, amount);
-        activate(address(bulletin), owner, owner, 10 ether);
-        uint256 requestId = requestByCurrency(owner, amount);
+        uint256 requestId = postRequestWithCurrency(owner, 10 ether, amount);
 
         withdrawRequest(owner, requestId);
 
@@ -122,9 +120,7 @@ contract BulletinTest_Withdraw is Test, BulletinTest {
         vm.assume(amount > 0);
 
         // setup request
-        mock.mint(owner, 10 ether);
-        activate(address(bulletin), owner, owner, 10 ether);
-        uint256 requestId = requestByCurrency(owner, amount);
+        uint256 requestId = postRequestWithCurrency(owner, 10 ether, amount);
 
         // setup resource
         activate(address(bulletin), owner, alice, 10 ether);

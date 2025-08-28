@@ -319,13 +319,11 @@ contract BulletinTest_Approve is Test, BulletinTest {
     function test_ResourceResponseToRequest_Approved(
         uint256 amount
     ) public payable {
-        mock.mint(owner, 10 ether);
         vm.assume(10 ether > amount);
         vm.assume(amount > 0);
 
         // setup request
-        activate(address(bulletin), owner, owner, 10 ether);
-        uint256 requestId = requestByCurrency(owner, amount);
+        uint256 requestId = postRequestWithCurrency(owner, 10 ether, amount);
 
         // setup resource
         activate(address(bulletin), owner, alice, 10 ether);
@@ -361,11 +359,9 @@ contract BulletinTest_Approve is Test, BulletinTest {
     ) public payable {
         vm.assume(1e20 > amount);
         vm.assume(amount > 10_000);
-        mock.mint(owner, amount);
 
         // setup request
-        activate(address(bulletin), owner, owner, 10 ether);
-        uint256 requestId = requestByCurrency(owner, amount);
+        uint256 requestId = postRequestWithCurrency(owner, amount, amount);
 
         // setup first trade
         uint256 responseId = setupSimpleResponse(alice, requestId);
@@ -405,11 +401,9 @@ contract BulletinTest_Approve is Test, BulletinTest {
     ) public payable {
         vm.assume(1e20 > amount);
         vm.assume(amount > 10_000);
-        mock.mint(owner, amount);
 
         // setup ask
-        activate(address(bulletin), owner, owner, 10 ether);
-        uint256 requestId = requestByCurrency(owner, amount);
+        uint256 requestId = postRequestWithCurrency(owner, amount, amount);
 
         // grant BULLETIN role
         grantRole(address(bulletin), owner, address(bulletin), BULLETIN_ROLE);

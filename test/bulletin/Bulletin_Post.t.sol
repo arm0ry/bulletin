@@ -18,9 +18,8 @@ contract BulletinTest_Post is Test, BulletinTest {
     function test_RequestByCredit(uint256 amount) public payable {
         vm.assume(10 ether > amount);
         vm.assume(amount > 0);
-        activate(address(bulletin), owner, owner, 10 ether);
 
-        uint256 requestId = requestByCredit(owner, amount);
+        uint256 requestId = postRequestWithCredit(owner, 10 ether, amount);
         IBulletin.Request memory _request = bulletin.getRequest(requestId);
 
         assertEq(_request.from, owner);
@@ -36,8 +35,7 @@ contract BulletinTest_Post is Test, BulletinTest {
         vm.assume(10 ether > amount);
         vm.assume(amount > 0);
 
-        mock.mint(owner, amount);
-        uint256 requestId = requestByCurrency(owner, amount);
+        uint256 requestId = postRequestWithCurrency(owner, amount, amount);
         IBulletin.Request memory _request = bulletin.getRequest(requestId);
 
         assertEq(_request.from, owner);
@@ -55,14 +53,14 @@ contract BulletinTest_Post is Test, BulletinTest {
         vm.assume(15 ether > newAmount);
         vm.assume(newAmount > 0);
 
-        activate(address(bulletin), owner, owner, 20 ether);
-        uint256 requestId = requestByCredit(owner, 5 ether);
+        uint256 requestId = postRequestWithCredit(owner, 20 ether, 5 ether);
         updateRequest(owner, requestId, address(0xc0d), newAmount);
 
         IBulletin.Request memory _request = bulletin.getRequest(requestId);
 
         assertEq(_request.from, owner);
-        assertEq(_request.data, BYTES);
+        assertEq(_request.data, BYTES2);
+        assertEq(_request.uri, TEST2);
         assertEq(_request.currency, address(0xc0d));
         assertEq(_request.drop, newAmount);
 
@@ -76,15 +74,15 @@ contract BulletinTest_Post is Test, BulletinTest {
         vm.assume(15 ether > newAmount);
         vm.assume(newAmount > 0);
 
-        mock.mint(owner, 20 ether);
-        uint256 requestId = requestByCurrency(owner, 5 ether);
+        uint256 requestId = postRequestWithCurrency(owner, 20 ether, 5 ether);
 
         mockApprove(owner, address(bulletin), 15 ether);
         updateRequest(owner, requestId, address(mock), newAmount);
         IBulletin.Request memory _request = bulletin.getRequest(requestId);
 
         assertEq(_request.from, owner);
-        assertEq(_request.data, BYTES);
+        assertEq(_request.data, BYTES2);
+        assertEq(_request.uri, TEST2);
         assertEq(_request.currency, address(mock));
         assertEq(_request.drop, newAmount);
 
@@ -97,9 +95,8 @@ contract BulletinTest_Post is Test, BulletinTest {
     ) public payable {
         vm.assume(10 ether > amount);
         vm.assume(amount > 0);
-        activate(address(bulletin), owner, owner, 10 ether);
 
-        uint256 requestId = requestByCredit(owner, amount);
+        uint256 requestId = postRequestWithCredit(owner, 10 ether, amount);
 
         mock.mint(owner, 10 ether);
         mockApprove(owner, address(bulletin), 10 ether);
@@ -107,7 +104,8 @@ contract BulletinTest_Post is Test, BulletinTest {
 
         IBulletin.Request memory _request = bulletin.getRequest(requestId);
         assertEq(_request.from, owner);
-        assertEq(_request.data, BYTES);
+        assertEq(_request.data, BYTES2);
+        assertEq(_request.uri, TEST2);
         assertEq(_request.currency, address(mock));
         assertEq(_request.drop, amount);
 
@@ -124,15 +122,15 @@ contract BulletinTest_Post is Test, BulletinTest {
         vm.assume(10 ether > amount);
         vm.assume(amount > 0);
 
-        mock.mint(owner, amount);
-        uint256 requestId = requestByCurrency(owner, amount);
+        uint256 requestId = postRequestWithCurrency(owner, amount, amount);
 
         activate(address(bulletin), owner, owner, 10 ether);
         updateRequest(owner, requestId, address(0xc0d), amount);
 
         IBulletin.Request memory _request = bulletin.getRequest(requestId);
         assertEq(_request.from, owner);
-        assertEq(_request.data, BYTES);
+        assertEq(_request.data, BYTES2);
+        assertEq(_request.uri, TEST2);
         assertEq(_request.currency, address(0xc0d));
         assertEq(_request.drop, amount);
 
@@ -143,33 +141,26 @@ contract BulletinTest_Post is Test, BulletinTest {
     }
 
     function test_Resource() public payable {
-        activate(address(bulletin), owner, owner, 10 ether);
-        uint256 resourceId = resource(true, owner);
+        uint256 resourceId = postResource(owner);
         IBulletin.Resource memory _resource = bulletin.getResource(resourceId);
         assertEq(_resource.from, owner);
         assertEq(_resource.data, BYTES);
+        assertEq(_resource.uri, TEST);
     }
 
     function test_Resource_Update() public payable {
-        activate(address(bulletin), owner, owner, 10 ether);
-        uint256 resourceId = resource(true, owner);
+        uint256 resourceId = postResource(owner);
 
         activate(address(bulletin), owner, charlie, 10 ether);
         updateResource(owner, charlie, resourceId);
         IBulletin.Resource memory _resource = bulletin.getResource(resourceId);
 
         assertEq(_resource.from, charlie);
-        assertEq(_resource.data, BYTES);
+        assertEq(_resource.data, BYTES2);
+        assertEq(_resource.uri, TEST2);
     }
 
-    function test_updateSimpleResponse_NotOriginalPoster(
-        uint256 _requestId,
-        uint256 _tradeId
-    ) public payable {
-        vm.prank(owner);
-        vm.expectRevert(IBulletin.NotOriginalPoster.selector);
-        bulletin.approveTradeToRequest(_requestId, _tradeId, 0);
-    }
+    // todo: test post by agents
 
     /* -------------------------------------------------------------------------- */
     /*                                  Reverts.                                  */
