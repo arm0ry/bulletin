@@ -15,8 +15,13 @@ import {Ownable} from "lib/solady/src/auth/Ownable.sol";
 /// -----------------------------------------------------------------------
 
 contract BulletinTest_Withdraw is Test, BulletinTest {
-    function test_Request_Withdraw() public payable {
-        uint256 requestId = postRequestWithCredit(owner, 10 ether, 5 ether);
+    function test_Withdraw_PostRequestWithCredit(
+        uint256 amount
+    ) public payable {
+        vm.assume(10 ether > amount);
+        vm.assume(amount > 0);
+
+        uint256 requestId = postRequestWithCredit(owner, 10 ether, amount);
 
         withdrawRequest(owner, requestId);
 
@@ -25,14 +30,16 @@ contract BulletinTest_Withdraw is Test, BulletinTest {
         assertEq(_request.data, "");
         assertEq(_request.currency, address(0));
         assertEq(_request.drop, 0);
+
+        IBulletin.Credit memory credit = bulletin.getCredit(owner);
+        assertEq(credit.amount, 10 ether);
     }
 
-    function test_RequestAndDepositCurrency_Withdraw(
+    function test_Withdraw_PostRequestWithCurrency(
         uint256 amount
     ) public payable {
-        vm.assume(1e20 > amount);
+        vm.assume(10 ether > amount);
         vm.assume(amount > 0);
-        mock.mint(owner, amount);
         uint256 requestId = postRequestWithCurrency(owner, 10 ether, amount);
 
         withdrawRequest(owner, requestId);
@@ -44,7 +51,7 @@ contract BulletinTest_Withdraw is Test, BulletinTest {
         assertEq(_request.drop, 0);
 
         assertEq(MockERC20(mock).balanceOf(address(bulletin)), 0);
-        assertEq(MockERC20(mock).balanceOf(owner), amount);
+        assertEq(MockERC20(mock).balanceOf(owner), 10 ether);
     }
 
     // todo: asserts
@@ -53,19 +60,20 @@ contract BulletinTest_Withdraw is Test, BulletinTest {
     // todo: asserts
     function test_withdraw_InvalidWithdrawal() public payable {}
 
-    function test_Resource_Withdraw() public payable {
+    function test_Withdraw_Resource() public payable {
         activate(address(bulletin), owner, owner, 10 ether);
-        uint256 resourceId = resource(true, owner);
+        uint256 resourceId = postResource(owner);
         withdrawResource(owner, resourceId);
         IBulletin.Resource memory _resource = bulletin.getResource(resourceId);
 
         assertEq(_resource.from, address(0));
         assertEq(_resource.data, "");
+        assertEq(_resource.uri, "");
     }
 
-    function test_ExchangeForResource_Withdraw(uint256 amount) public payable {
+    function test_Withdraw_TradeForResource(uint256 amount) public payable {
         activate(address(bulletin), owner, alice, 10 ether);
-        uint256 resourceId = resource(false, alice);
+        uint256 resourceId = postResource(alice);
 
         mock.mint(bob, amount);
         mockApprove(bob, address(bulletin), amount);
@@ -113,7 +121,7 @@ contract BulletinTest_Withdraw is Test, BulletinTest {
         assertEq(mock.balanceOf(address(bulletin)), 0);
     }
 
-    function test_ResourceResponseToRequest_Withdraw(
+    function test_Withdraw_PostResponseWithResource(
         uint256 amount
     ) public payable {
         vm.assume(10 ether > amount);
@@ -124,7 +132,7 @@ contract BulletinTest_Withdraw is Test, BulletinTest {
 
         // setup resource
         activate(address(bulletin), owner, alice, 10 ether);
-        uint256 resourceId = resource(false, alice);
+        uint256 resourceId = postResource(alice);
 
         // setup trade
         uint256 responseId = setupResourceResponse(

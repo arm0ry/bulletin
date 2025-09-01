@@ -15,7 +15,7 @@ import {Ownable} from "lib/solady/src/auth/Ownable.sol";
 /// -----------------------------------------------------------------------
 
 contract BulletinTest_Post is Test, BulletinTest {
-    function test_RequestByCredit(uint256 amount) public payable {
+    function test_RequestWithCredit(uint256 amount) public payable {
         vm.assume(10 ether > amount);
         vm.assume(amount > 0);
 
@@ -31,7 +31,7 @@ contract BulletinTest_Post is Test, BulletinTest {
         assertEq(credit.amount, 10 ether - amount);
     }
 
-    function test_RequestByCurrency(uint256 amount) public payable {
+    function test_RequestWithCurrency(uint256 amount) public payable {
         vm.assume(10 ether > amount);
         vm.assume(amount > 0);
 
@@ -47,7 +47,7 @@ contract BulletinTest_Post is Test, BulletinTest {
         assertEq(MockERC20(mock).balanceOf(owner), 0);
     }
 
-    function test_RequestByCredit_UpdateCreditAmount(
+    function test_RequestWithCredit_UpdateCreditAmount(
         uint256 newAmount
     ) public payable {
         vm.assume(15 ether > newAmount);
@@ -68,7 +68,7 @@ contract BulletinTest_Post is Test, BulletinTest {
         assertEq(credit.amount, 20 ether - newAmount);
     }
 
-    function test_RequestByCurrency_UpdateCurrencyAmount(
+    function test_RequestWithCurrency_UpdateCurrencyAmount(
         uint256 newAmount
     ) public payable {
         vm.assume(15 ether > newAmount);
@@ -90,7 +90,7 @@ contract BulletinTest_Post is Test, BulletinTest {
         assertEq(MockERC20(mock).balanceOf(owner), 20 ether - newAmount);
     }
 
-    function test_RequestByCredit_UpdatePaymentToCurrency(
+    function test_RequestWithCredit_UpdatePaymentToCurrency(
         uint256 amount
     ) public payable {
         vm.assume(10 ether > amount);
@@ -116,7 +116,7 @@ contract BulletinTest_Post is Test, BulletinTest {
         assertEq(credit.amount, 10 ether);
     }
 
-    function test_RequestByCurrency_UpdatePaymentToCredit(
+    function test_RequestWithCurrency_UpdatePaymentToCredit(
         uint256 amount
     ) public payable {
         vm.assume(10 ether > amount);
@@ -166,7 +166,7 @@ contract BulletinTest_Post is Test, BulletinTest {
     /*                                  Reverts.                                  */
     /* -------------------------------------------------------------------------- */
 
-    function testRevert_RequestByCredit_DropRequired(
+    function testRevert_RequestWithCredit_DropRequired(
         uint256 amount
     ) public payable {
         vm.assume(10 ether > amount);
@@ -186,7 +186,7 @@ contract BulletinTest_Post is Test, BulletinTest {
         bulletin.request(0, r);
     }
 
-    function testRevert_RequestByCredit_InsufficientCredit(
+    function testRevert_RequestWithCredit_InsufficientCredit(
         uint256 amount
     ) public payable {
         vm.assume(amount > 2 ether);
@@ -205,7 +205,7 @@ contract BulletinTest_Post is Test, BulletinTest {
         bulletin.request(0, r);
     }
 
-    function testRevert_RequestByCurrency_DropRequired(
+    function testRevert_RequestWithCurrency_DropRequired(
         uint256 amount
     ) public payable {
         vm.assume(10 ether > amount);
@@ -227,7 +227,7 @@ contract BulletinTest_Post is Test, BulletinTest {
         bulletin.request(0, r);
     }
 
-    function testRevert_RequestByCredit_NotEnoughCreditToPost(
+    function testRevert_RequestWithCredit_NotEnoughCreditToPost(
         uint256 amount
     ) public payable {
         vm.assume(10 ether > amount);

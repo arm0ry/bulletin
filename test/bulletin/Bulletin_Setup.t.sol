@@ -188,20 +188,20 @@ contract BulletinTest is Test {
         id = bulletin.resourceId();
     }
 
-    function resource(
-        bool isOwner,
-        address user
-    ) public payable returns (uint256 id) {
-        IBulletin.Resource memory r = IBulletin.Resource({
-            from: user,
-            data: BYTES,
-            uri: TEST
-        });
+    // function resource(
+    //     bool isOwner,
+    //     address user
+    // ) public payable returns (uint256 id) {
+    //     IBulletin.Resource memory r = IBulletin.Resource({
+    //         from: user,
+    //         data: BYTES,
+    //         uri: TEST
+    //     });
 
-        vm.prank((isOwner) ? owner : user);
-        bulletin.resource(0, r);
-        id = bulletin.resourceId();
-    }
+    //     vm.prank((isOwner) ? owner : user);
+    //     bulletin.resource(0, r);
+    //     id = bulletin.resourceId();
+    // }
 
     function updateResource(
         address op,

@@ -475,4 +475,6 @@ contract Governor {
     function pause(uint256 subjectId, uint256 tradeId) internal {
         IBulletin(bulletin).pause(subjectId, tradeId);
     }
+
+    receive() external payable {}
 }

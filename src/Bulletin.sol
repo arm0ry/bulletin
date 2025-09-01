@@ -348,7 +348,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         if (t.from != msg.sender) revert NotOriginalPoster();
 
         // Refund.
-        refund(t.from, t.currency, t.amount);
+        if (t.amount > 0) refund(t.from, t.currency, t.amount);
 
         // Remove trade.
         (tradeType == TradeType.RESPONSE)
