@@ -115,19 +115,23 @@ contract BulletinTest_Trade is Test, BulletinTest {
         assertEq(credit.amount, 3 ether);
     }
 
-    function test_PostResponseWithCurrency(bool byCredit) public payable {
+    function test_PostResponseWithCurrency(
+        bool byCredit,
+        uint256 amount
+    ) public payable {
+        vm.assume(20 ether > amount);
+        vm.assume(amount > 0);
+
         uint256 requestId = byCredit
             ? postRequestWithCredit(owner, 20 ether, 5 ether)
             : postRequestWithCurrency(owner, 20 ether, 5 ether);
 
-        mock.mint(alice, 5 ether);
-        mockApprove(alice, address(bulletin), 5 ether);
         uint256 tradeId = postTradeWithCurrency(
             IBulletin.TradeType.RESPONSE,
             alice,
             requestId,
             address(mock),
-            2 ether
+            amount
         );
 
         IBulletin.Trade memory t = bulletin.getTrade(
@@ -143,15 +147,15 @@ contract BulletinTest_Trade is Test, BulletinTest {
         assertEq(t.from, alice);
         assertEq(t.resource, 0);
         assertEq(t.currency, address(mock));
-        assertEq(t.amount, 2 ether);
+        assertEq(t.amount, amount);
         assertEq(t.content, TEST);
         assertEq(t.data, BYTES);
 
         assertEq(
             MockERC20(mock).balanceOf(address(bulletin)),
-            byCredit ? 2 ether : 7 ether
+            byCredit ? amount : 5 ether + amount
         );
-        assertEq(MockERC20(mock).balanceOf(alice), 3 ether);
+        assertEq(MockERC20(mock).balanceOf(alice), 0);
     }
 
     function test_PostResponseWithResourceAndCredit(
@@ -328,17 +332,17 @@ contract BulletinTest_Trade is Test, BulletinTest {
         assertEq(credit.amount, 3 ether);
     }
 
-    function test_PostExchangeWithCurrency() public payable {
+    function test_PostExchangeWithCurrency(uint256 amount) public payable {
+        vm.assume(amount > 0);
+
         uint256 resourceId = postResource(owner);
 
-        mock.mint(alice, 5 ether);
-        mockApprove(alice, address(bulletin), 5 ether);
         uint256 tradeId = postTradeWithCurrency(
             IBulletin.TradeType.EXCHANGE,
             alice,
             resourceId,
             address(mock),
-            2 ether
+            amount
         );
 
         IBulletin.Trade memory t = bulletin.getTrade(
@@ -354,12 +358,12 @@ contract BulletinTest_Trade is Test, BulletinTest {
         assertEq(t.from, alice);
         assertEq(t.resource, 0);
         assertEq(t.currency, address(mock));
-        assertEq(t.amount, 2 ether);
+        assertEq(t.amount, amount);
         assertEq(t.content, TEST);
         assertEq(t.data, BYTES);
 
-        assertEq(MockERC20(mock).balanceOf(address(bulletin)), 2 ether);
-        assertEq(MockERC20(mock).balanceOf(alice), 3 ether);
+        assertEq(MockERC20(mock).balanceOf(address(bulletin)), amount);
+        assertEq(MockERC20(mock).balanceOf(alice), 0);
     }
 
     /* -------------------------------------------------------------------------- */
@@ -409,7 +413,9 @@ contract BulletinTest_Trade is Test, BulletinTest {
         assertEq(credit.amount, 2 ether);
     }
 
-    function test_UpdateResponseWithCredit_UpdateToCurrency() public payable {
+    function test_UpdateResponseWithCredit_UpdateToCurrency(
+        uint256 amount
+    ) public payable {
         uint256 requestId = postRequestWithCredit(owner, 20 ether, 5 ether);
 
         activate(address(bulletin), owner, alice, 5 ether);
@@ -422,15 +428,13 @@ contract BulletinTest_Trade is Test, BulletinTest {
         );
 
         bytes32 r;
-        mock.mint(alice, 5 ether);
-        mockApprove(alice, address(bulletin), 5 ether);
         updateTrade(
             IBulletin.TradeType.RESPONSE,
             alice,
             requestId,
             r,
             address(mock),
-            3 ether
+            amount
         );
 
         IBulletin.Trade memory t = bulletin.getTrade(
@@ -446,28 +450,33 @@ contract BulletinTest_Trade is Test, BulletinTest {
         assertEq(t.from, alice);
         assertEq(t.resource, 0);
         assertEq(t.currency, address(mock));
-        assertEq(t.amount, 3 ether);
+        assertEq(t.amount, amount);
         assertEq(t.content, TEST2);
         assertEq(t.data, BYTES2);
 
         IBulletin.Credit memory credit = bulletin.getCredit(alice);
         assertEq(credit.amount, 5 ether);
 
-        assertEq(MockERC20(mock).balanceOf(address(bulletin)), 3 ether);
-        assertEq(MockERC20(mock).balanceOf(alice), 2 ether);
+        assertEq(MockERC20(mock).balanceOf(address(bulletin)), amount);
+        assertEq(MockERC20(mock).balanceOf(alice), 0);
     }
 
-    function test_UpdateResponseWithCurrency_IncreaseCurrency() public payable {
-        uint256 requestId = postRequestWithCredit(owner, 20 ether, 5 ether);
+    function test_UpdateResponseWithCurrency_IncreaseCurrency(
+        uint256 amount,
+        uint256 newAmount
+    ) public payable {
+        vm.assume(20 ether > amount);
+        vm.assume(amount > 0);
+        vm.assume(20 ether > newAmount);
+        vm.assume(newAmount > amount);
 
-        mock.mint(alice, 5 ether);
-        mockApprove(alice, address(bulletin), 5 ether);
+        uint256 requestId = postRequestWithCredit(owner, 20 ether, 5 ether);
         uint256 tradeId = postTradeWithCurrency(
             IBulletin.TradeType.RESPONSE,
             alice,
             requestId,
             address(mock),
-            2 ether
+            amount
         );
 
         bytes32 r;
@@ -477,7 +486,7 @@ contract BulletinTest_Trade is Test, BulletinTest {
             requestId,
             r,
             address(mock),
-            3 ether
+            newAmount
         );
 
         IBulletin.Trade memory t = bulletin.getTrade(
@@ -493,25 +502,27 @@ contract BulletinTest_Trade is Test, BulletinTest {
         assertEq(t.from, alice);
         assertEq(t.resource, 0);
         assertEq(t.currency, address(mock));
-        assertEq(t.amount, 3 ether);
+        assertEq(t.amount, newAmount);
         assertEq(t.content, TEST2);
         assertEq(t.data, BYTES2);
 
-        assertEq(MockERC20(mock).balanceOf(address(bulletin)), 3 ether);
-        assertEq(MockERC20(mock).balanceOf(alice), 2 ether);
+        assertEq(MockERC20(mock).balanceOf(address(bulletin)), newAmount);
+        assertEq(MockERC20(mock).balanceOf(alice), amount);
     }
 
-    function test_UpdateResponseWithCurrency_UpdateToCredit() public payable {
-        uint256 requestId = postRequestWithCredit(owner, 20 ether, 5 ether);
+    function test_UpdateResponseWithCurrency_UpdateToCredit(
+        uint256 amount
+    ) public payable {
+        vm.assume(20 ether > amount);
+        vm.assume(amount > 0);
 
-        mock.mint(alice, 5 ether);
-        mockApprove(alice, address(bulletin), 5 ether);
+        uint256 requestId = postRequestWithCredit(owner, 20 ether, 5 ether);
         uint256 tradeId = postTradeWithCurrency(
             IBulletin.TradeType.RESPONSE,
             alice,
             requestId,
             address(mock),
-            2 ether
+            amount
         );
 
         bytes32 r;
@@ -546,7 +557,7 @@ contract BulletinTest_Trade is Test, BulletinTest {
         assertEq(credit.amount, 2 ether);
 
         assertEq(MockERC20(mock).balanceOf(address(bulletin)), 0);
-        assertEq(MockERC20(mock).balanceOf(alice), 5 ether);
+        assertEq(MockERC20(mock).balanceOf(alice), amount);
     }
 
     /* -------------------------------------------------------------------------- */

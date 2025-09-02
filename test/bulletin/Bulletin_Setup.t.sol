@@ -134,7 +134,7 @@ contract BulletinTest is Test {
         uint256 mint,
         uint256 drop
     ) public payable returns (uint256 id) {
-        mock.mint(owner, mint);
+        mock.mint(user, mint);
         mockApprove(user, address(bulletin), drop);
 
         IBulletin.Request memory r = IBulletin.Request({
@@ -188,21 +188,6 @@ contract BulletinTest is Test {
         id = bulletin.resourceId();
     }
 
-    // function resource(
-    //     bool isOwner,
-    //     address user
-    // ) public payable returns (uint256 id) {
-    //     IBulletin.Resource memory r = IBulletin.Resource({
-    //         from: user,
-    //         data: BYTES,
-    //         uri: TEST
-    //     });
-
-    //     vm.prank((isOwner) ? owner : user);
-    //     bulletin.resource(0, r);
-    //     id = bulletin.resourceId();
-    // }
-
     function updateResource(
         address op,
         address newOwner,
@@ -249,6 +234,8 @@ contract BulletinTest is Test {
         bulletin.trade(IBulletin.TradeType.RESPONSE, requestId, trade);
         id = bulletin.tradeIdsPerRequest(requestId);
     }
+
+    // @notice Trade
 
     function postTradeWithPromise(
         IBulletin.TradeType tradeType,
@@ -345,6 +332,12 @@ contract BulletinTest is Test {
         uint256 amount
     ) public payable returns (uint256 id) {
         bytes32 r;
+
+        if (currency != address(0xc0d)) {
+            mock.mint(user, amount);
+            mockApprove(user, address(bulletin), amount);
+        } else activate(address(bulletin), owner, user, amount);
+
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
             paused: true,
@@ -372,6 +365,11 @@ contract BulletinTest is Test {
         address currency,
         uint256 amount
     ) public payable {
+        if (currency != address(0xc0d)) {
+            mock.mint(user, amount);
+            mockApprove(user, address(bulletin), amount);
+        }
+
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
             paused: true,

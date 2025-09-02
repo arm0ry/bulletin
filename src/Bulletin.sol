@@ -379,7 +379,9 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
             if (amount != 0) r.drop -= amount;
 
             // Accept currency amount, if any.
-            route(t.currency, address(0), r.from, t.amount);
+            if (t.currency == address(0xc0d)) build(r.from, t.amount);
+            else if (t.currency != address(0))
+                route(t.currency, address(this), r.from, t.amount);
 
             // Update `t.currency` and `t.amount` for counterparty to `claim()` in the future.
             t.currency = r.currency;
@@ -480,6 +482,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         } else revert Denied();
     }
 
+    // TODO: check on whose tokens to burn
     function claim(
         TradeType tradeType,
         uint256 subjectId,
@@ -637,8 +640,14 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
 
     // Refund currency or credit.
     function refund(address to, address currency, uint256 amount) internal {
-        if (currency == address(0xc0d)) credits[to].amount += amount;
+        if (currency == address(0xc0d)) build(to, amount);
         else route(currency, address(this), to, amount);
+    }
+
+    function build(address to, uint256 amount) private {
+        unchecked {
+            credits[to].amount += amount;
+        }
     }
 
     function _beforeTokenTransfer(
