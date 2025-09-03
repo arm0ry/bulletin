@@ -50,18 +50,21 @@ contract BulletinTest_Approve is Test, BulletinTest {
         // approve trade
         approveTradeToRequest(owner, requestId, tradeId, amount);
 
-        IBulletin.Trade memory _trade = bulletin.getTrade(
+        IBulletin.Trade memory trade = bulletin.getTrade(
             IBulletin.TradeType.RESPONSE,
             requestId,
             tradeId
         );
-        assertEq(_trade.approved, true);
-        assertEq(_trade.from, alice);
-        assertEq(_trade.currency, address(mock));
-        assertEq(_trade.amount, amount);
-        assertEq(_trade.resource, 0);
-        assertEq(_trade.content, TEST);
-        assertEq(_trade.data, BYTES);
+        assertEq(trade.approved, true);
+        assertEq(trade.from, alice);
+        assertEq(trade.paused, false);
+        assertEq(trade.timestamp, 0);
+        assertEq(trade.duration, 0);
+        assertEq(trade.currency, address(mock));
+        assertEq(trade.amount, amount);
+        assertEq(trade.resource, 0);
+        assertEq(trade.content, TEST);
+        assertEq(trade.data, BYTES);
 
         assertEq(
             bulletin.balanceOf(
@@ -115,6 +118,9 @@ contract BulletinTest_Approve is Test, BulletinTest {
         );
         assertEq(trade.approved, true);
         assertEq(trade.from, alice);
+        assertEq(trade.paused, false);
+        assertEq(trade.timestamp, 0);
+        assertEq(trade.duration, 0);
         assertEq(trade.currency, address(mock));
         assertEq(trade.amount, amount / 2);
         assertEq(trade.resource, 0);
@@ -163,6 +169,9 @@ contract BulletinTest_Approve is Test, BulletinTest {
         );
         assertEq(trade.approved, true);
         assertEq(trade.from, bob);
+        assertEq(trade.paused, false);
+        assertEq(trade.timestamp, 0);
+        assertEq(trade.duration, 0);
         assertEq(trade.currency, address(mock));
         assertEq(trade.amount, amount / 2);
         assertEq(trade.resource, 0);
@@ -224,6 +233,9 @@ contract BulletinTest_Approve is Test, BulletinTest {
         );
         assertEq(trade.approved, true);
         assertEq(trade.from, alice);
+        assertEq(trade.paused, false);
+        assertEq(trade.timestamp, 0);
+        assertEq(trade.duration, 0);
         assertEq(trade.currency, address(mock));
         assertEq(trade.amount, amount);
         assertEq(
@@ -285,6 +297,9 @@ contract BulletinTest_Approve is Test, BulletinTest {
         );
         assertEq(trade.approved, true);
         assertEq(trade.from, alice);
+        assertEq(trade.paused, false);
+        assertEq(trade.timestamp, 0);
+        assertEq(trade.duration, 0);
         assertEq(trade.currency, address(mock));
         assertEq(trade.amount, amount / 2);
         assertEq(trade.resource, 0);
@@ -345,6 +360,9 @@ contract BulletinTest_Approve is Test, BulletinTest {
         );
         assertEq(trade.approved, true);
         assertEq(trade.from, alice);
+        assertEq(trade.paused, false);
+        assertEq(trade.timestamp, 0);
+        assertEq(trade.duration, 0);
         assertEq(trade.currency, address(mock));
         assertEq(trade.amount, amount / 2);
         assertEq(trade.resource, 0);
@@ -408,6 +426,9 @@ contract BulletinTest_Approve is Test, BulletinTest {
         );
         assertEq(trade.approved, true);
         assertEq(trade.from, alice);
+        assertEq(trade.paused, false);
+        assertEq(trade.timestamp, 0);
+        assertEq(trade.duration, 0);
         assertEq(trade.currency, address(0xc0d));
         assertEq(trade.amount, amount);
         assertEq(trade.resource, 0);
@@ -466,6 +487,9 @@ contract BulletinTest_Approve is Test, BulletinTest {
         );
         assertEq(trade.approved, true);
         assertEq(trade.from, alice);
+        assertEq(trade.paused, false);
+        assertEq(trade.timestamp, 0);
+        assertEq(trade.duration, 0);
         assertEq(trade.currency, address(0xc0d));
         assertEq(trade.amount, amount / 2);
         assertEq(trade.resource, 0);
@@ -515,6 +539,9 @@ contract BulletinTest_Approve is Test, BulletinTest {
         );
         assertEq(trade.approved, true);
         assertEq(trade.from, bob);
+        assertEq(trade.paused, false);
+        assertEq(trade.timestamp, 0);
+        assertEq(trade.duration, 0);
         assertEq(trade.currency, address(0xc0d));
         assertEq(trade.amount, amount / 2);
         assertEq(trade.resource, 0);
@@ -573,6 +600,9 @@ contract BulletinTest_Approve is Test, BulletinTest {
         );
         assertEq(trade.approved, true);
         assertEq(trade.from, alice);
+        assertEq(trade.paused, false);
+        assertEq(trade.timestamp, 0);
+        assertEq(trade.duration, 0);
         assertEq(trade.currency, address(0xc0d));
         assertEq(trade.amount, amount / 2);
         assertEq(trade.resource, 0);
@@ -632,6 +662,9 @@ contract BulletinTest_Approve is Test, BulletinTest {
             tradeId
         );
         assertEq(trade.approved, true);
+        assertEq(trade.paused, false);
+        assertEq(trade.timestamp, 0);
+        assertEq(trade.duration, 0);
         assertEq(trade.from, alice);
         assertEq(trade.currency, address(0xc0d));
         assertEq(trade.amount, amount / 2);
@@ -660,300 +693,231 @@ contract BulletinTest_Approve is Test, BulletinTest {
     /*                                  Resource.                                 */
     /* -------------------------------------------------------------------------- */
 
-    function test_Approve_ExchangeWithCurrency_ByVendor(
-        uint256 amount
-    ) public payable {
-        vm.assume(10 ether > amount);
-        vm.assume(amount > 10_000);
+    function test_Approve_ExchangeWithPromise(uint256 amount) public payable {
+        vm.assume(amount > 0);
+        vm.assume(20 ether > amount);
 
-        mock.mint(bob, amount);
-
-        activate(address(bulletin), owner, alice, 10 ether);
-        uint256 resourceId = postResource(alice);
-        uint256 exchangeId = setupCurrencyExchange(
-            bob,
+        uint256 resourceId = postResource(owner);
+        uint256 tradeId = postTradeWithPromise(
+            IBulletin.TradeType.EXCHANGE,
+            alice,
             resourceId,
-            address(mock),
-            amount
+            TEST2,
+            BYTES2
         );
 
+        approveTradeForResource(owner, resourceId, tradeId, 1 weeks);
         IBulletin.Trade memory trade = bulletin.getTrade(
             IBulletin.TradeType.EXCHANGE,
             resourceId,
-            exchangeId
-        );
-        assertEq(trade.approved, false);
-        assertEq(trade.from, bob);
-        assertEq(trade.currency, address(mock));
-        assertEq(trade.amount, amount);
-        assertEq(trade.resource, 0);
-        assertEq(trade.content, TEST);
-        assertEq(trade.data, BYTES);
-        assertEq(mock.balanceOf(bob), 0);
-        assertEq(mock.balanceOf(address(bulletin)), amount);
-
-        // Approve exchange.
-        approveTradeForResource(alice, resourceId, exchangeId);
-
-        // Vendor claim and receive currency.
-        vm.prank(alice);
-        bulletin.claim(IBulletin.TradeType.EXCHANGE, resourceId, exchangeId);
-
-        trade = bulletin.getTrade(
-            IBulletin.TradeType.EXCHANGE,
-            resourceId,
-            exchangeId
+            tradeId
         );
         assertEq(trade.approved, true);
-        assertEq(trade.from, bob);
-        assertEq(trade.currency, address(0));
-        assertEq(trade.amount, 0);
-        assertEq(mock.balanceOf(alice), amount);
-        assertEq(mock.balanceOf(address(bulletin)), 0);
-    }
-
-    function test_Approve_ExchangeWithCredit_ByMember(
-        uint256 amount
-    ) public payable {
-        vm.assume(5 ether > amount);
-        vm.assume(amount > 10_000);
-
-        IBulletin.Credit memory credit = bulletin.getCredit(alice);
-        assertEq(credit.limit, 0 ether);
-        assertEq(credit.amount, 0 ether);
-
-        activate(address(bulletin), owner, alice, 10 ether);
-        activate(address(bulletin), owner, bob, 10 ether);
-
-        // Bob trades with Alice by spending credits.
-        uint256 resourceId = postResource(alice);
-        uint256 exchangeId = setupCreditExchange(bob, resourceId, amount);
-
-        credit = bulletin.getCredit(bob);
-        assertEq(credit.limit, 10 ether);
-        assertEq(credit.amount, 10 ether - amount);
-
-        approveTradeForResource(alice, resourceId, exchangeId);
-
-        vm.prank(alice);
-        bulletin.claim(IBulletin.TradeType.EXCHANGE, resourceId, exchangeId);
-
-        credit = bulletin.getCredit(alice);
-        assertEq(credit.limit, 10 ether);
-        assertEq(credit.amount, 10 ether + amount);
-    }
-
-    function test_Approve_ExchangeForResource_BuildCredit(
-        uint256 amount
-    ) public payable {
-        vm.assume(5 ether > amount);
-        vm.assume(amount > 10_000);
-
-        // Bob buys Alice's resource with credits.
-        test_Approve_ExchangeWithCredit_ByMember(2 ether);
-
-        IBulletin.Credit memory credit = bulletin.getCredit(bob);
-        assertEq(credit.limit, 10 ether);
-        assertEq(credit.amount, 8 ether);
-
-        // Alice buys Bob's resource with credits.
-        uint256 resourceId = postResource(bob);
-        uint256 exchangeId = setupCreditExchange(alice, resourceId, amount);
-        approveTradeForResource(bob, resourceId, exchangeId);
-
-        vm.prank(bob);
-        bulletin.claim(IBulletin.TradeType.EXCHANGE, resourceId, exchangeId);
-
-        credit = bulletin.getCredit(bob);
-        assertEq(credit.amount, 8 ether + amount);
-        credit = bulletin.getCredit(alice);
-        assertEq(credit.limit, 10 ether);
-        assertEq(credit.amount, 12 ether - amount);
-    }
-
-    function test_Approve_ExchangeForResource_AmountGrtrThanLimit(
-        uint256 amount
-    ) public payable {
-        vm.assume(5 ether > amount);
-        vm.assume(amount > 10_000);
-
-        // Bob buys Alice's resource with credits.
-        test_Approve_ExchangeWithCredit_ByMember(4 ether);
-
-        // Alice is penalized with credit limit slashed.
-        // Alice now has more credit than limit allows.
-        vm.prank(owner);
-        Bulletin(address(bulletin)).adjust(alice, 2 ether);
-
-        // When penalized, credit amount normalizes/decreases by the amount of reduction in credit limit.
-        IBulletin.Credit memory credit = bulletin.getCredit(alice);
-        assertEq(credit.limit, 2 ether);
-        assertEq(credit.amount, 6 ether);
-
-        activate(address(bulletin), owner, charlie, 5 ether);
-
-        // Alice can still use credits to buy Bob's resource.
-        uint256 resourceId = postResource(bob);
-        uint256 exchangeId = setupCreditExchange(alice, resourceId, amount);
-        approveTradeForResource(bob, resourceId, exchangeId);
-
-        vm.prank(bob);
-        bulletin.claim(IBulletin.TradeType.EXCHANGE, resourceId, exchangeId);
-
-        credit = bulletin.getCredit(bob);
-        assertEq(credit.amount, 6 ether + amount);
-        credit = bulletin.getCredit(alice);
-        assertEq(credit.limit, 2 ether);
-        assertEq(credit.amount, 6 ether - amount);
-
-        exchangeId = setupCreditExchange(charlie, 1, amount);
-        credit = bulletin.getCredit(charlie);
-        assertEq(credit.limit, 5 ether);
-        assertEq(credit.amount, 5 ether - amount);
-
-        approveTradeForResource(alice, 1, exchangeId);
-
-        vm.prank(alice);
-        bulletin.claim(IBulletin.TradeType.EXCHANGE, 1, exchangeId);
-
-        credit = bulletin.getCredit(alice);
-        assertEq(credit.limit, 2 ether);
-        assertEq(credit.amount, 6 ether);
-    }
-
-    function test_ExchangeForResource_ApproveCurrency(
-        uint256 amount
-    ) public payable {
-        vm.assume(1e20 > amount);
-        activate(address(bulletin), owner, alice, 10 ether);
-        uint256 resourceId = postResource(alice);
-
-        mock.mint(bob, amount);
-        mockApprove(bob, address(bulletin), amount);
-        uint256 exchangeId = setupCurrencyExchange(
-            bob,
-            resourceId,
-            address(mock),
-            amount
-        );
-
-        IBulletin.Trade memory trade = bulletin.getTrade(
-            IBulletin.TradeType.EXCHANGE,
-            resourceId,
-            exchangeId
-        );
-        assertEq(trade.approved, false);
-        assertEq(trade.from, bob);
-        assertEq(trade.currency, address(mock));
-        assertEq(trade.amount, amount);
+        assertEq(trade.paused, false);
+        assertEq(trade.timestamp, 1);
+        assertEq(trade.duration, 1 weeks);
+        assertEq(trade.from, alice);
         assertEq(trade.resource, 0);
-        assertEq(trade.content, TEST);
-        assertEq(trade.data, BYTES);
-        assertEq(mock.balanceOf(bob), 0);
-        assertEq(mock.balanceOf(address(bulletin)), amount);
-
-        uint256 id = bulletin.getUnapprovedTradeIdByUser(
-            IBulletin.TradeType.EXCHANGE,
-            resourceId,
-            bob
-        );
-        IBulletin.Trade memory _trade = bulletin.getTrade(
-            IBulletin.TradeType.EXCHANGE,
-            resourceId,
-            id
-        );
-        assertEq(id, exchangeId);
-        assertEq(_trade.approved, false);
-        assertEq(_trade.from, bob);
-        assertEq(_trade.currency, address(mock));
-        assertEq(_trade.amount, amount);
-        assertEq(_trade.resource, 0);
-        assertEq(_trade.content, TEST);
-        assertEq(_trade.data, BYTES);
-
-        approveTradeForResource(alice, resourceId, exchangeId);
-
-        vm.prank(alice);
-        bulletin.claim(IBulletin.TradeType.EXCHANGE, resourceId, exchangeId);
-
-        trade = bulletin.getTrade(
-            IBulletin.TradeType.EXCHANGE,
-            resourceId,
-            exchangeId
-        );
-        assertEq(trade.approved, true);
-        assertEq(trade.from, bob);
         assertEq(trade.currency, address(0));
         assertEq(trade.amount, 0);
-        assertEq(mock.balanceOf(alice), amount);
-        assertEq(mock.balanceOf(address(bulletin)), 0);
+        assertEq(trade.content, TEST2);
+        assertEq(trade.data, BYTES2);
+
+        assertEq(
+            bulletin.balanceOf(
+                owner,
+                bulletin.encodeTokenId(
+                    address(bulletin),
+                    IBulletin.TradeType.EXCHANGE,
+                    uint40(resourceId),
+                    uint40(tradeId)
+                )
+            ),
+            1
+        );
+        assertEq(
+            bulletin.balanceOf(
+                alice,
+                bulletin.encodeTokenId(
+                    address(bulletin),
+                    IBulletin.TradeType.EXCHANGE,
+                    uint40(resourceId),
+                    uint40(tradeId)
+                )
+            ),
+            1
+        );
     }
 
-    function test_ExchangeForResource_ApproveResource() public payable {
-        activate(address(bulletin), owner, alice, 10 ether);
-        activate(address(bulletin), owner, bob, 10 ether);
+    function test_Approve_ExchangeWithResource(uint256 amount) public payable {
+        vm.assume(amount > 0);
+        vm.assume(20 ether > amount);
 
-        uint256 resourceId = postResource(alice);
-        uint256 bobResourceId = postResource(bob);
-        uint256 exchangeId = setupResourceExchange(
-            bob,
+        uint256 resourceId = postResource(owner);
+        uint256 resourceId2 = postResource(alice);
+        uint256 tradeId = postTradeWithResource(
+            IBulletin.TradeType.EXCHANGE,
+            alice,
             resourceId,
             address(bulletin),
-            bobResourceId
+            resourceId2
         );
 
+        approveTradeForResource(owner, resourceId, tradeId, 1 weeks);
         IBulletin.Trade memory trade = bulletin.getTrade(
             IBulletin.TradeType.EXCHANGE,
             resourceId,
-            exchangeId
+            tradeId
         );
-        assertEq(trade.approved, false);
-        assertEq(trade.from, bob);
-        assertEq(trade.currency, address(0));
-        assertEq(trade.amount, 0);
+        assertEq(trade.approved, true);
+        assertEq(trade.paused, false);
+        assertEq(trade.timestamp, 1);
+        assertEq(trade.duration, 1 weeks);
+        assertEq(trade.from, alice);
         assertEq(
             trade.resource,
-            bulletin.encodeAsset(address(bulletin), uint96(bobResourceId))
+            bulletin.encodeAsset(address(bulletin), uint96(resourceId2))
         );
+        assertEq(trade.currency, address(0));
+        assertEq(trade.amount, 0);
         assertEq(trade.content, TEST);
         assertEq(trade.data, BYTES);
 
-        uint256 id = bulletin.getUnapprovedTradeIdByUser(
-            IBulletin.TradeType.EXCHANGE,
-            resourceId,
-            bob
-        );
-        IBulletin.Trade memory _trade = bulletin.getTrade(
-            IBulletin.TradeType.EXCHANGE,
-            resourceId,
-            id
-        );
-        assertEq(id, exchangeId);
-        assertEq(_trade.approved, false);
-        assertEq(_trade.from, bob);
-        assertEq(_trade.currency, address(0));
-        assertEq(_trade.amount, 0);
         assertEq(
-            _trade.resource,
-            bulletin.encodeAsset(address(bulletin), uint96(bobResourceId))
+            bulletin.balanceOf(
+                owner,
+                bulletin.encodeTokenId(
+                    address(bulletin),
+                    IBulletin.TradeType.EXCHANGE,
+                    uint40(resourceId),
+                    uint40(tradeId)
+                )
+            ),
+            1
         );
-        assertEq(_trade.content, TEST);
-        assertEq(_trade.data, BYTES);
-
-        approveTradeForResource(alice, resourceId, exchangeId);
-        trade = bulletin.getTrade(
-            IBulletin.TradeType.EXCHANGE,
-            resourceId,
-            exchangeId
+        assertEq(
+            bulletin.balanceOf(
+                alice,
+                bulletin.encodeTokenId(
+                    address(bulletin),
+                    IBulletin.TradeType.EXCHANGE,
+                    uint40(resourceId),
+                    uint40(tradeId)
+                )
+            ),
+            1
         );
-        assertEq(trade.approved, true);
-        assertEq(trade.from, bob);
-        assertEq(trade.currency, address(0));
-        assertEq(trade.amount, 0);
     }
 
-    function test_ApproveWithCurrency_ExchangeWithCredit() public payable {}
-    function test_ApproveWithCurrency_ExchangeWithCurrency() public payable {}
-    function test_ApproveWithCredit_ExchangeWithCurrency() public payable {}
-    function test_ApproveWithCredit_ExchangeWithCredit() public payable {}
+    function test_Approve_ExchangeWithCredit(uint256 amount) public payable {
+        vm.assume(amount > 0);
+        vm.assume(20 ether > amount);
+
+        uint256 resourceId = postResource(owner);
+        uint256 tradeId = postTradeWithCurrency(
+            IBulletin.TradeType.EXCHANGE,
+            alice,
+            resourceId,
+            address(0xc0d),
+            amount
+        );
+
+        approveTradeForResource(owner, resourceId, tradeId, 1 weeks);
+        IBulletin.Trade memory trade = bulletin.getTrade(
+            IBulletin.TradeType.EXCHANGE,
+            resourceId,
+            tradeId
+        );
+        assertEq(trade.approved, true);
+        assertEq(trade.paused, false);
+        assertEq(trade.timestamp, 1);
+        assertEq(trade.duration, 1 weeks);
+        assertEq(trade.from, alice);
+        assertEq(trade.resource, 0);
+        assertEq(trade.currency, address(0xc0d));
+        assertEq(trade.amount, amount);
+        assertEq(trade.content, TEST);
+        assertEq(trade.data, BYTES);
+
+        assertEq(
+            bulletin.balanceOf(
+                owner,
+                bulletin.encodeTokenId(
+                    address(bulletin),
+                    IBulletin.TradeType.EXCHANGE,
+                    uint40(resourceId),
+                    uint40(tradeId)
+                )
+            ),
+            1
+        );
+        assertEq(
+            bulletin.balanceOf(
+                alice,
+                bulletin.encodeTokenId(
+                    address(bulletin),
+                    IBulletin.TradeType.EXCHANGE,
+                    uint40(resourceId),
+                    uint40(tradeId)
+                )
+            ),
+            1
+        );
+    }
+
+    function test_Approve_ExchangeWithCurrency(uint256 amount) public payable {
+        vm.assume(amount > 0);
+        vm.assume(20 ether > amount);
+
+        uint256 resourceId = postResource(owner);
+        uint256 tradeId = postTradeWithCurrency(
+            IBulletin.TradeType.EXCHANGE,
+            alice,
+            resourceId,
+            address(mock),
+            amount
+        );
+
+        approveTradeForResource(owner, resourceId, tradeId, 1 weeks);
+        IBulletin.Trade memory trade = bulletin.getTrade(
+            IBulletin.TradeType.EXCHANGE,
+            resourceId,
+            tradeId
+        );
+        assertEq(trade.approved, true);
+        assertEq(trade.paused, false);
+        assertEq(trade.timestamp, 1);
+        assertEq(trade.duration, 1 weeks);
+        assertEq(trade.from, alice);
+        assertEq(trade.resource, 0);
+        assertEq(trade.currency, address(mock));
+        assertEq(trade.amount, amount);
+        assertEq(trade.content, TEST);
+        assertEq(trade.data, BYTES);
+
+        assertEq(
+            bulletin.balanceOf(
+                owner,
+                bulletin.encodeTokenId(
+                    address(bulletin),
+                    IBulletin.TradeType.EXCHANGE,
+                    uint40(resourceId),
+                    uint40(tradeId)
+                )
+            ),
+            1
+        );
+        assertEq(
+            bulletin.balanceOf(
+                alice,
+                bulletin.encodeTokenId(
+                    address(bulletin),
+                    IBulletin.TradeType.EXCHANGE,
+                    uint40(resourceId),
+                    uint40(tradeId)
+                )
+            ),
+            1
+        );
+    }
 }

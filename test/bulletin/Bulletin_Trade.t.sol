@@ -85,7 +85,6 @@ contract BulletinTest_Trade is Test, BulletinTest {
             ? postRequestWithCredit(owner, 20 ether, 5 ether)
             : postRequestWithCurrency(owner, 20 ether, 5 ether);
 
-        activate(address(bulletin), owner, alice, 5 ether);
         uint256 tradeId = postTradeWithCurrency(
             IBulletin.TradeType.RESPONSE,
             alice,
@@ -112,7 +111,7 @@ contract BulletinTest_Trade is Test, BulletinTest {
         assertEq(t.data, BYTES);
 
         IBulletin.Credit memory credit = bulletin.getCredit(alice);
-        assertEq(credit.amount, 3 ether);
+        assertEq(credit.amount, 0);
     }
 
     function test_PostResponseWithCurrency(
@@ -302,7 +301,6 @@ contract BulletinTest_Trade is Test, BulletinTest {
     function test_PostExchangeWithCredit() public payable {
         uint256 resourceId = postResource(owner);
 
-        activate(address(bulletin), owner, alice, 5 ether);
         uint256 tradeId = postTradeWithCurrency(
             IBulletin.TradeType.EXCHANGE,
             alice,
@@ -329,7 +327,7 @@ contract BulletinTest_Trade is Test, BulletinTest {
         assertEq(t.data, BYTES);
 
         IBulletin.Credit memory credit = bulletin.getCredit(alice);
-        assertEq(credit.amount, 3 ether);
+        assertEq(credit.amount, 0);
     }
 
     function test_PostExchangeWithCurrency(uint256 amount) public payable {
@@ -372,14 +370,12 @@ contract BulletinTest_Trade is Test, BulletinTest {
 
     function test_UpdateResponseWithCredit_IncreaseCredit() public payable {
         uint256 requestId = postRequestWithCredit(owner, 20 ether, 5 ether);
-
-        activate(address(bulletin), owner, alice, 5 ether);
         uint256 tradeId = postTradeWithCurrency(
             IBulletin.TradeType.RESPONSE,
             alice,
             requestId,
             address(0xc0d),
-            2 ether
+            5 ether
         );
 
         bytes32 r;
@@ -389,7 +385,7 @@ contract BulletinTest_Trade is Test, BulletinTest {
             requestId,
             r,
             address(0xc0d),
-            3 ether
+            8 ether
         );
 
         IBulletin.Trade memory t = bulletin.getTrade(
@@ -405,12 +401,12 @@ contract BulletinTest_Trade is Test, BulletinTest {
         assertEq(t.from, alice);
         assertEq(t.resource, 0);
         assertEq(t.currency, address(0xc0d));
-        assertEq(t.amount, 3 ether);
+        assertEq(t.amount, 8 ether);
         assertEq(t.content, TEST2);
         assertEq(t.data, BYTES2);
 
         IBulletin.Credit memory credit = bulletin.getCredit(alice);
-        assertEq(credit.amount, 2 ether);
+        assertEq(credit.amount, 5 ether);
     }
 
     function test_UpdateResponseWithCredit_UpdateToCurrency(
@@ -418,7 +414,6 @@ contract BulletinTest_Trade is Test, BulletinTest {
     ) public payable {
         uint256 requestId = postRequestWithCredit(owner, 20 ether, 5 ether);
 
-        activate(address(bulletin), owner, alice, 5 ether);
         uint256 tradeId = postTradeWithCurrency(
             IBulletin.TradeType.RESPONSE,
             alice,
@@ -455,7 +450,7 @@ contract BulletinTest_Trade is Test, BulletinTest {
         assertEq(t.data, BYTES2);
 
         IBulletin.Credit memory credit = bulletin.getCredit(alice);
-        assertEq(credit.amount, 5 ether);
+        assertEq(credit.amount, 2 ether);
 
         assertEq(MockERC20(mock).balanceOf(address(bulletin)), amount);
         assertEq(MockERC20(mock).balanceOf(alice), 0);
@@ -526,7 +521,6 @@ contract BulletinTest_Trade is Test, BulletinTest {
         );
 
         bytes32 r;
-        activate(address(bulletin), owner, alice, 5 ether);
         updateTrade(
             IBulletin.TradeType.RESPONSE,
             alice,
@@ -554,7 +548,7 @@ contract BulletinTest_Trade is Test, BulletinTest {
         assertEq(t.data, BYTES2);
 
         IBulletin.Credit memory credit = bulletin.getCredit(alice);
-        assertEq(credit.amount, 2 ether);
+        assertEq(credit.amount, 0);
 
         assertEq(MockERC20(mock).balanceOf(address(bulletin)), 0);
         assertEq(MockERC20(mock).balanceOf(alice), amount);

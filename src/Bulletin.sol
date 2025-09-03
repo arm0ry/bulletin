@@ -256,10 +256,10 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
                 // Add a new trade.
                 t = (tradeType == TradeType.RESPONSE)
                     ? tradesPerRequest[subjectId][
-                        ++tradeIdsPerRequest[subjectId]
+                        tradeId = ++tradeIdsPerRequest[subjectId]
                     ]
                     : tradesPerResource[subjectId][
-                        ++tradeIdsPerResource[subjectId]
+                        tradeId = ++tradeIdsPerResource[subjectId]
                     ];
 
                 if (!isAgent)
@@ -270,7 +270,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
                 t.timestamp = uint40(block.timestamp);
                 t.currency = _t.currency;
                 t.amount = _t.amount;
-                (_t.resource > 0) ? t.resource = _t.resource : t.resource;
+                t.resource = _t.resource;
             }
         }
 
@@ -387,7 +387,10 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
             t.currency = r.currency;
             t.amount = amount;
 
-            // Mint rights token to user for future `access()`, `dispute()`, and tranfsers.
+            // Remove `t.timestamp` for future `claim()` logic per `Request`.
+            delete t.timestamp;
+
+            // Mint rights token to `t.from` for future `claim()`, `pause()`, and tranfsers.
             _mint(
                 t.from,
                 encodeTokenId(
@@ -417,10 +420,12 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         if (!t.approved) {
             // Aprove trade.
             t.approved = true;
+
+            // Set timestamp and specified duration to access resource.
             t.timestamp = uint40(block.timestamp);
             t.duration = duration;
 
-            // Mint rights token to `r.from` for future `claim()`, `dispute()`, and transfers().
+            // Mint rights token to `r.from` for future `claim()`, `dispute()`, and transfers.
             _mint(
                 r.from,
                 encodeTokenId(
@@ -461,6 +466,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     /*                                   Engage.                                  */
     /* -------------------------------------------------------------------------- */
 
+    /// @notice Access resource only
     function access(uint256 subjectId, uint256 tradeId) external {
         uint256 id = encodeTokenId(
             address(this),
@@ -468,26 +474,20 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
             uint40(subjectId),
             uint40(tradeId)
         );
-
         if (balanceOf(msg.sender, id) == 0) revert Unauthorized();
 
         Trade storage t = tradesPerResource[subjectId][tradeId];
-        if (
-            t.approved &&
-            !t.paused &&
-            t.timestamp + t.duration >= uint40(block.timestamp)
-        ) {
+        if (!t.paused && t.timestamp + t.duration >= uint40(block.timestamp)) {
             // Access allowed.
             emit Accessed(subjectId, tradeId);
         } else revert Denied();
     }
 
-    // TODO: check on whose tokens to burn
     function claim(
         TradeType tradeType,
         uint256 subjectId,
         uint256 tradeId
-    ) public {
+    ) external {
         uint256 id = encodeTokenId(
             address(this),
             tradeType,
@@ -501,58 +501,49 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
             ? t = tradesPerRequest[subjectId][tradeId]
             : t = tradesPerResource[subjectId][tradeId];
 
-        unchecked {
-            // When trade is approved and not in dispute, `t.amount` becomes claimable.
-            if (t.approved && !t.paused) {
-                // When `t.timestamp` is not set (ie, claim bounty) or when a trade reaches
-                // past deadline, `msg.sender` may claim `t.amount` in full.
-                if (t.timestamp == 0) {
-                    // Burn token.
-                    Request storage r = requests[subjectId];
-                    _burn(r.from, id, 1);
-                    _burn(msg.sender, id, 1);
+        // When trade is approved and not paused for dispute resolution,
+        // `t.amount` becomes claimable.
+        if (!t.paused) {
+            // When `t.timestamp` is not set (ie, claim `Request` drop) or when a trade reaches
+            // past deadline, `t.from` and `r.from` may claim `t.amount` in full, respectively.
+            if (t.timestamp == 0) {
+                // Burn token to claim `Request` drop.
+                _burn(t.from, id, 1);
 
-                    // Distribute.
-                    route(t.currency, address(this), msg.sender, t.amount);
-                    delete t.amount;
-                } else if (uint40(block.timestamp) > t.timestamp + t.duration) {
-                    // Burn token.
-                    _burn(msg.sender, id, 1);
-                    _burn(t.from, id, 1);
+                // Distribute.
+                distribute(t.currency, address(this), t.from, t.amount);
 
-                    // Distribute.
-                    route(t.currency, address(this), msg.sender, t.amount);
-                    delete t.amount;
-                } else if (
-                    t.timestamp + t.duration >= uint40(block.timestamp)
-                ) {
-                    // Otherwise, `msg.sender` may claim streamed `t.amount` by the second.
-                    uint40 timeStreamed = uint40(block.timestamp) - t.timestamp;
-                    uint256 amountStreamed = ((t.amount * timeStreamed) /
-                        t.duration) * 100;
+                // Update.
+                delete t.amount;
+            } else if (uint40(block.timestamp) > t.timestamp + t.duration) {
+                // When trade expires, any party to `Trade` may burn tokens and initiate
+                // transfer of remaining amount in `Trade`.
+                Resource storage r = resources[subjectId];
+                _burn(r.from, id, 1);
+                _burn(t.from, id, 1);
 
-                    // Update timestamp and amount for future `claim()`.
-                    if (1 gwei > t.amount - amountStreamed) {
-                        // Burn token.
-                        _burn(msg.sender, id, 1);
-                        _burn(t.from, id, 1);
+                // Distribute.
+                distribute(t.currency, address(this), r.from, t.amount);
 
-                        amountStreamed = t.amount;
-                        delete t.amount;
-                    } else t.amount -= amountStreamed;
-                    (t.duration > timeStreamed)
-                        ? t.duration -= timeStreamed
-                        : t.duration = 0;
-                    t.timestamp = uint40(block.timestamp);
+                // Update.
+                delete t.amount;
+                delete t.duration;
+                t.timestamp = uint40(block.timestamp);
+            } else if (t.timestamp + t.duration >= uint40(block.timestamp)) {
+                // `r.from` may claim streamed `t.amount` by the second.
+                uint40 timeStreamed = uint40(block.timestamp) - t.timestamp;
+                uint256 amountStreamed = (t.amount * 100 * timeStreamed) /
+                    t.duration /
+                    100;
 
-                    // Distribute.
-                    route(
-                        t.currency,
-                        address(this),
-                        msg.sender,
-                        amountStreamed
-                    );
-                } else {}
+                // Update payment amount, access duration, and timestamp for future `claim()`.
+                Resource storage r = resources[subjectId];
+                t.amount -= amountStreamed;
+                t.duration -= timeStreamed;
+                t.timestamp = uint40(block.timestamp);
+
+                // Distribute.
+                distribute(t.currency, address(this), r.from, amountStreamed);
             } else revert Denied();
         }
     }
@@ -644,10 +635,21 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         else route(currency, address(this), to, amount);
     }
 
+    // Build credit.
     function build(address to, uint256 amount) private {
         unchecked {
             credits[to].amount += amount;
         }
+    }
+
+    function distribute(
+        address currency,
+        address from,
+        address to,
+        uint256 amount
+    ) internal {
+        if (currency == address(0xc0d)) build(to, amount);
+        else if (currency != address(0)) route(currency, from, to, amount);
     }
 
     function _beforeTokenTransfer(

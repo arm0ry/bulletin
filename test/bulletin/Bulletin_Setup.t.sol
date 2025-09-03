@@ -104,6 +104,16 @@ contract BulletinTest is Test {
         Bulletin(payable(_bulletin)).activate(user, amount);
     }
 
+    function adjust(
+        address _bulletin,
+        address _owner,
+        address user,
+        uint256 amount
+    ) public payable {
+        vm.prank(_owner);
+        Bulletin(payable(_bulletin)).adjust(user, amount);
+    }
+
     /// -----------------------------------------------------------------------
     /// Helpers.
     /// -----------------------------------------------------------------------
@@ -333,10 +343,21 @@ contract BulletinTest is Test {
     ) public payable returns (uint256 id) {
         bytes32 r;
 
-        if (currency != address(0xc0d)) {
+        if (currency != address(0) && currency != address(0xc0d)) {
             mock.mint(user, amount);
             mockApprove(user, address(bulletin), amount);
-        } else activate(address(bulletin), owner, user, amount);
+        }
+
+        if (currency == address(0xc0d)) {
+            IBulletin.Credit memory c = bulletin.getCredit(user);
+            if (c.limit > 0)
+                adjust(address(bulletin), owner, user, amount + c.limit);
+            else activate(address(bulletin), owner, user, amount);
+        }
+
+        // IBulletin.Credit memory c = bulletin.getCredit(user);
+        // if (c.limit > 0) adjust(address(bulletin), owner, user, amount);
+        // else activate(address(bulletin), owner, user, amount);
 
         IBulletin.Trade memory trade = IBulletin.Trade({
             approved: true,
@@ -365,9 +386,16 @@ contract BulletinTest is Test {
         address currency,
         uint256 amount
     ) public payable {
-        if (currency != address(0xc0d)) {
+        if (currency != address(0) && currency != address(0xc0d)) {
             mock.mint(user, amount);
             mockApprove(user, address(bulletin), amount);
+        }
+
+        if (currency == address(0xc0d)) {
+            IBulletin.Credit memory c = bulletin.getCredit(user);
+            if (c.limit > 0)
+                adjust(address(bulletin), owner, user, amount + c.limit);
+            else activate(address(bulletin), owner, user, amount);
         }
 
         IBulletin.Trade memory trade = IBulletin.Trade({
@@ -511,14 +539,11 @@ contract BulletinTest is Test {
     function approveTradeForResource(
         address op,
         uint256 resourceId,
-        uint256 exchangeId
+        uint256 exchangeId,
+        uint40 duration
     ) public payable {
         vm.prank(op);
-        bulletin.approveTradeForResource(
-            resourceId,
-            exchangeId,
-            type(uint40).max
-        );
+        bulletin.approveTradeForResource(resourceId, exchangeId, duration);
     }
 
     function withdrawExchange(
