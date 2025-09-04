@@ -555,53 +555,37 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
             uint40(subjectId),
             uint40(tradeId)
         );
-
-        Trade storage t = tradesPerResource[subjectId][tradeId];
-        Resource storage r = resources[subjectId];
-
         if (balanceOf(msg.sender, id) == 0) revert Unauthorized();
 
-        // Initiate dispute resolution.
+        // Initiate pause flow.
+        Trade storage t = tradesPerResource[subjectId][tradeId];
+        Resource storage r = resources[subjectId];
         if (!t.paused) {
             t.paused = true;
 
-            // Limit intiator's access to `access()`, `claim()` and `pause()` supplied trade.
-            _burn(msg.sender, id, 1);
-
-            // Limit user access if `msg.sender` is owner of resource.
-            if (msg.sender == r.from) {
-                // Limit user's access to resource.
-                _burn(t.from, id, 1);
-            }
-
             // Calculate streamed amount and update `t.amount`.
             uint40 timeStreamed = uint40(block.timestamp) - t.timestamp;
-            uint256 amountStreamed = ((t.amount * timeStreamed) / t.duration) *
+            uint256 amountStreamed = (t.amount * 100 * timeStreamed) /
+                t.duration /
                 100;
 
-            // Update amount for future `claim()`.
-            if (1 gwei > t.amount - amountStreamed) {
-                amountStreamed = t.amount;
+            if (t.timestamp + t.duration >= uint40(block.timestamp)) {
+                // Update amount and duration for future `claim()`.
+                t.amount -= amountStreamed;
+                t.duration -= timeStreamed;
+            } else {
                 delete t.amount;
-            } else t.amount -= amountStreamed;
-
-            // Update `t.duration`.
-            (t.duration > timeStreamed)
-                ? t.duration -= timeStreamed
-                : t.duration = 0;
-
+                delete t.duration;
+            }
             // Distribute streamed `t.amount` up to `block.timestamp`.
-            route(t.currency, address(this), r.from, amountStreamed);
+            distribute(t.currency, address(this), r.from, amountStreamed);
         } else {
             t.paused = false;
 
             // If `t.duration` remains, mint tokens to user for future use.
             if (t.duration != 0) {
                 t.timestamp = uint40(block.timestamp);
-                _mint(t.from, id, 1);
             }
-
-            if (msg.sender == r.from) _mint(r.from, id, 1);
         }
     }
 
@@ -657,9 +641,10 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
         address,
         uint256 id,
         uint256
-    ) internal pure override {
+    ) internal view override {
         (, , uint40 subjectId, uint40 tradeId) = decodeTokenId(id);
-        if (subjectId > 0 && tradeId == 0) revert InvalidTransfer();
+        Trade storage t = tradesPerResource[subjectId][tradeId];
+        if (t.paused) revert TradePaused();
     }
 
     /* -------------------------------------------------------------------------- */

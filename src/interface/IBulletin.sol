@@ -74,10 +74,9 @@ interface IBulletin {
     error Approved();
     error Activated();
     error Denounced();
-
+    error TradePaused();
     error DropRequired();
     error InvalidTrade();
-    error InvalidTransfer();
     error NotYetActivated();
     error NotOriginalPoster();
     error InsufficientCredit();
