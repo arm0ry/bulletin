@@ -574,15 +574,17 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
                 t.amount -= amountStreamed;
                 t.duration -= timeStreamed;
             } else {
+                amountStreamed = t.amount;
                 delete t.amount;
                 delete t.duration;
             }
+
             // Distribute streamed `t.amount` up to `block.timestamp`.
             distribute(t.currency, address(this), r.from, amountStreamed);
         } else {
             t.paused = false;
 
-            // If `t.duration` remains, mint tokens to user for future use.
+            // Update `t.timestamp` for future `access()` and `claim()`.
             if (t.duration != 0) {
                 t.timestamp = uint40(block.timestamp);
             }

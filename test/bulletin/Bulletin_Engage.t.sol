@@ -754,7 +754,7 @@ contract BulletinTest_Engage is Test, BulletinTest {
     /*                                   Pause.                                   */
     /* -------------------------------------------------------------------------- */
 
-    function testFail_Pause_Exchange(
+    function test_PauseBeforeExpiration(
         bool creditTrade,
         uint256 amount,
         uint40 timestamp
@@ -817,37 +817,23 @@ contract BulletinTest_Engage is Test, BulletinTest {
         assertEq(trade.amount, amount - amountStreamed);
         assertEq(trade.duration, remainingTime);
 
-        // Foundry does not revert for error is in an internal function
-        // see https://github.com/foundry-rs/foundry/issues/5454
-        vm.expectRevert(IBulletin.TradePaused.selector);
-        vm.prank(owner);
-        bulletin.transfer(
-            alice,
-            bulletin.encodeTokenId(
-                address(bulletin),
-                IBulletin.TradeType.EXCHANGE,
-                uint40(resourceId),
-                uint40(tradeId)
-            ),
-            1
+        uint256 tokenId = bulletin.encodeTokenId(
+            address(bulletin),
+            IBulletin.TradeType.EXCHANGE,
+            uint40(resourceId),
+            uint40(tradeId)
         );
 
-        // Foundry does not revert for error is in an internal function
-        // see https://github.com/foundry-rs/foundry/issues/5454
+        vm.expectRevert(IBulletin.TradePaused.selector);
+        vm.prank(owner);
+        bulletin.transfer(alice, tokenId, 1);
+
         vm.expectRevert(IBulletin.TradePaused.selector);
         vm.prank(alice);
-        bulletin.transfer(
-            owner,
-            bulletin.encodeTokenId(
-                address(bulletin),
-                IBulletin.TradeType.EXCHANGE,
-                uint40(resourceId),
-                uint40(tradeId)
-            ),
-            1
-        );
+        bulletin.transfer(owner, tokenId, 1);
     }
-    function test_Unpause(
+
+    function test_PauseBeforeExpiration_Unpause(
         bool creditTrade,
         uint256 amount,
         uint40 timestamp,
@@ -889,12 +875,11 @@ contract BulletinTest_Engage is Test, BulletinTest {
                 trade.amount
             );
 
-        // claim
-        vm.warp(timestamp);
+        // pause
         vm.prank(owner);
         bulletin.pause(resourceId, tradeId);
 
-        // pause
+        // unpause
         vm.warp(timestamp2);
         vm.prank(owner);
         bulletin.pause(resourceId, tradeId);
@@ -905,6 +890,7 @@ contract BulletinTest_Engage is Test, BulletinTest {
             uint40(resourceId),
             uint40(tradeId)
         );
+
         // verify
         assertEq(bulletin.balanceOf(owner, tokenId), 1);
         assertEq(bulletin.balanceOf(alice, tokenId), 1);
@@ -914,8 +900,10 @@ contract BulletinTest_Engage is Test, BulletinTest {
             resourceId,
             tradeId
         );
+        assertEq(trade.paused, false);
         assertEq(trade.amount, amount - amountStreamed);
         assertEq(trade.duration, remainingTime);
+        assertEq(trade.timestamp, timestamp2);
 
         vm.prank(owner);
         bulletin.approve(owner, tokenId, 100);
@@ -939,8 +927,86 @@ contract BulletinTest_Engage is Test, BulletinTest {
         uint40 duration = 1 weeks;
         vm.assume(amount > 0);
         vm.assume(20 ether > amount);
-        vm.assume(timestamp > 0);
         vm.assume(timestamp > duration);
+
+        // pre-claim flow
+        uint256 resourceId = postResource(owner);
+        uint256 tradeId = postTradeWithCurrency(
+            IBulletin.TradeType.EXCHANGE,
+            alice,
+            resourceId,
+            creditTrade ? address(0xc0d) : address(mock),
+            amount
+        );
+        approveTradeForResource(owner, resourceId, tradeId, duration);
+
+        // verification prep
+        vm.warp(timestamp);
+        IBulletin.Trade memory trade = bulletin.getTrade(
+            IBulletin.TradeType.EXCHANGE,
+            resourceId,
+            tradeId
+        );
+        (uint256 amountStreamed, ) = calculateAmountStreamedAndRemainingTime(
+            timestamp,
+            trade.timestamp,
+            trade.duration,
+            trade.amount
+        );
+        assertEq(trade.amount, amountStreamed);
+
+        // claim
+        vm.prank(owner);
+        bulletin.pause(resourceId, tradeId);
+
+        // verify
+        uint256 tokenId = bulletin.encodeTokenId(
+            address(bulletin),
+            IBulletin.TradeType.EXCHANGE,
+            uint40(resourceId),
+            uint40(tradeId)
+        );
+
+        if (creditTrade) {
+            IBulletin.Credit memory c = bulletin.getCredit(owner);
+            assertEq(c.limit, 0);
+            assertEq(c.amount, amountStreamed);
+        } else {
+            assertEq(mock.balanceOf(owner), amountStreamed);
+        }
+
+        assertEq(bulletin.balanceOf(owner, tokenId), 1);
+        assertEq(bulletin.balanceOf(alice, tokenId), 1);
+
+        trade = bulletin.getTrade(
+            IBulletin.TradeType.EXCHANGE,
+            resourceId,
+            tradeId
+        );
+        assertEq(trade.amount, 0);
+        assertEq(trade.duration, 0);
+
+        vm.expectRevert(IBulletin.TradePaused.selector);
+        vm.prank(owner);
+        bulletin.transfer(alice, tokenId, 1);
+
+        vm.expectRevert(IBulletin.TradePaused.selector);
+        vm.prank(alice);
+        bulletin.transfer(owner, tokenId, 1);
+    }
+
+    function test_PauseAfterExpiration_Unpause(
+        bool creditTrade,
+        uint256 amount,
+        uint40 timestamp,
+        uint40 timestamp2
+    ) public payable {
+        // data setup
+        uint40 duration = 1 weeks;
+        vm.assume(amount > 0);
+        vm.assume(20 ether > amount);
+        vm.assume(timestamp > duration);
+        vm.assume(timestamp2 > timestamp);
 
         // pre-claim flow
         uint256 resourceId = postResource(owner);
@@ -974,47 +1040,43 @@ contract BulletinTest_Engage is Test, BulletinTest {
         vm.prank(owner);
         bulletin.pause(resourceId, tradeId);
 
+        // pause
+        vm.warp(timestamp2);
+        vm.prank(owner);
+        bulletin.pause(resourceId, tradeId);
+
+        uint256 tokenId = bulletin.encodeTokenId(
+            address(bulletin),
+            IBulletin.TradeType.EXCHANGE,
+            uint40(resourceId),
+            uint40(tradeId)
+        );
+
         // verify
-        if (creditTrade) {
-            IBulletin.Credit memory c = bulletin.getCredit(owner);
-            assertEq(c.limit, 0);
-            assertEq(c.amount, amountStreamed);
-        } else {
-            assertEq(mock.balanceOf(owner), amountStreamed);
-        }
-
-        assertEq(
-            bulletin.balanceOf(
-                owner,
-                bulletin.encodeTokenId(
-                    address(bulletin),
-                    IBulletin.TradeType.EXCHANGE,
-                    uint40(resourceId),
-                    uint40(tradeId)
-                )
-            ),
-            0
-        );
-        assertEq(
-            bulletin.balanceOf(
-                alice,
-                bulletin.encodeTokenId(
-                    address(bulletin),
-                    IBulletin.TradeType.EXCHANGE,
-                    uint40(resourceId),
-                    uint40(tradeId)
-                )
-            ),
-            0
-        );
-
         trade = bulletin.getTrade(
             IBulletin.TradeType.EXCHANGE,
             resourceId,
             tradeId
         );
+        assertEq(trade.paused, false);
         assertEq(trade.amount, amount - amountStreamed);
         assertEq(trade.duration, remainingTime);
+        assertEq(trade.timestamp, timestamp);
+
+        vm.prank(owner);
+        bulletin.approve(owner, tokenId, 100);
+        vm.prank(owner);
+        bulletin.transfer(alice, tokenId, 1);
+        assertEq(bulletin.balanceOf(alice, tokenId), 2);
+
+        vm.prank(alice);
+        bulletin.approve(alice, tokenId, 2);
+        vm.prank(alice);
+        bulletin.transferFrom(alice, owner, tokenId, 2);
+        assertEq(bulletin.balanceOf(owner, tokenId), 2);
+
+        vm.prank(owner);
+        vm.expectRevert(IBulletin.Denied.selector);
+        bulletin.access(resourceId, tradeId);
     }
-    function test_UnpauseAfterExpiration() public payable {}
 }
