@@ -468,6 +468,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
 
     /// @notice Access resource only
     function access(uint256 subjectId, uint256 tradeId) external {
+        console.log(block.timestamp);
         uint256 id = encodeTokenId(
             address(this),
             TradeType.EXCHANGE,
@@ -585,9 +586,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
             t.paused = false;
 
             // Update `t.timestamp` for future `access()` and `claim()`.
-            if (t.duration != 0) {
-                t.timestamp = uint40(block.timestamp);
-            }
+            t.timestamp = uint40(block.timestamp);
         }
     }
 

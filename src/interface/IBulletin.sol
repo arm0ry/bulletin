@@ -121,12 +121,12 @@ interface IBulletin {
         uint40 deadline
     ) external;
 
+    function access(uint256 subjectId, uint256 tradeId) external;
     function claim(
         TradeType tradeType,
         uint256 subjectId,
         uint256 tradeId
     ) external;
-
     function pause(uint256 subjectId, uint256 tradeId) external;
 
     /* -------------------------------------------------------------------------- */
@@ -134,16 +134,18 @@ interface IBulletin {
     /* -------------------------------------------------------------------------- */
 
     function getRequest(uint256 id) external view returns (Request memory r);
-
     function getResource(uint256 id) external view returns (Resource memory r);
-
     function getTrade(
         TradeType tradeType,
         uint256 subjectId,
         uint256 tradeId
     ) external view returns (Trade memory);
-
     function getCredit(address user) external view returns (Credit memory c);
+    function getUnapprovedTradeIdByUser(
+        TradeType tradeType,
+        uint256 subjectId,
+        address user
+    ) external view returns (uint256 id);
 
     /* -------------------------------------------------------------------------- */
     /*                      Public / External Pure Functions.                     */

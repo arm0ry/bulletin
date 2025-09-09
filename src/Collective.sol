@@ -2,99 +2,34 @@
 pragma solidity >=0.8.4;
 
 import {IBulletin} from "src/interface/IBulletin.sol";
+import {ICollective} from "src/interface/ICollective.sol";
 import {Bulletin} from "src/Bulletin.sol";
 import {SafeTransferLib} from "lib/solady/src/utils/SafeTransferLib.sol";
 import {FixedPointMathLib} from "lib/solady/src/utils/FixedPointMathLib.sol";
 import {console} from "lib/forge-std/src/console.sol";
 
-enum Status {
-    ACTIVE,
-    SPONSORED,
-    GRACE,
-    PROCESSED,
-    CANCELLED
-}
-
-enum Tally {
-    SIMPLE_MAJORITY,
-    SUPERMAJORITY,
-    QUADRATIC
-}
-
-enum Action {
-    ACTIVATE_CREDIT,
-    ADJUST_CREDIT,
-    POST_REQUEST,
-    UPDATE_REQUEST,
-    WITHDRAW_REQUEST,
-    APPROVE_RESPONSE,
-    POST_RESOURCE,
-    UPDATE_RESOURCE,
-    WITHDRAW_RESOURCE,
-    APPROVE_EXCHANGE,
-    CLAIM,
-    PAUSE,
-    TRADE,
-    WITHDRAW_TRADE
-}
-
-struct Proposal {
-    Status status;
-    Action action;
-    Tally tally;
-    uint8 quorum;
-    uint40 timestamp;
-    address proposer;
-    bytes payload; // proposal content
-    string doc;
-    // allowlist
-    uint256[] roles;
-    uint256[] weights; // unsigned integer, 0 decimal
-    uint256[] spots; // unsigned integer, 0 decimal
-}
-
-struct Ballot {
-    bool yay;
-    address voter;
-    uint256 amount;
-}
-
-struct Objection {
-    address user;
-    string content;
-}
-
-/// @title Governor Module for governing bulletin.
-/// @notice A control center for action Bulletin.
+/// @title Collective Module for governing bulletin.
+/// @notice A control center for Bulletin actions.
 /// @author audsssy.eth
-contract Governor {
-    error Denied();
-
-    uint16 public proposalId; // keeping it small for gas golfing
-
-    uint40 public midpoint = 3 days; // for s-curve use only
-
-    uint40 public gracePeriod; // starts after proposal meets passing requirement
-
+contract Collective is ICollective {
     address public bulletin;
+    uint40 public gracePeriod; // auto starts after proposal meets quorum
+    uint40 public proposalId;
 
     mapping(uint256 => Proposal) public proposals;
-
     mapping(uint256 => uint256) public ballotIdsPerProposal;
+    mapping(uint256 => uint256) public improvementIdsPerProposal;
 
     mapping(uint256 => mapping(uint256 => Ballot)) public ballots;
-
-    mapping(uint256 => uint256) public objectionIdsPerProposal;
-
-    mapping(uint256 => mapping(uint256 => Objection)) public objections;
+    mapping(uint256 => mapping(uint256 => Improvement)) public improvements;
 
     /* -------------------------------------------------------------------------- */
     /*                                Constructor.                                */
     /* -------------------------------------------------------------------------- */
 
-    function init(address b, uint40 g) external {
-        bulletin = b;
-        gracePeriod = g;
+    function init(address _bulletin, uint40 _grace) external {
+        bulletin = _bulletin;
+        gracePeriod = _grace;
     }
 
     /* -------------------------------------------------------------------------- */
@@ -108,12 +43,12 @@ contract Governor {
                 msg.sender,
                 Bulletin(bulletin).DENOUNCED()
             )
-        ) revert Denied();
+        ) revert Denounced();
 
         _;
     }
 
-    modifier onlyCredited() {
+    modifier credited() {
         // Insufficient `Bulletin.Credit.limit`.
         IBulletin.Credit memory c = IBulletin(bulletin).getCredit(msg.sender);
         if (c.limit == 0) revert Denied();
@@ -122,42 +57,42 @@ contract Governor {
     }
 
     /* -------------------------------------------------------------------------- */
-    /*                                 Governance.                                */
+    /*                                 Proposals.                                 */
     /* -------------------------------------------------------------------------- */
 
-    function propose(Proposal calldata prop) external onlyCredited undenounced {
+    function propose(Proposal calldata prop) external credited undenounced {
         // Check array parity.
-        if (prop.roles.length == 0) revert Denied();
-        if (prop.roles.length != prop.weights.length) revert Denied();
-        if (prop.weights.length != prop.spots.length) revert Denied();
+        if (prop.roles.length == 0) revert RolesUndefined();
+        if (prop.roles.length != prop.weights.length) revert LengthMismatch();
+        if (prop.weights.length != prop.spots.length) revert LengthMismatch();
 
         // Check quorum.
-        if (prop.quorum > 100) revert Denied();
+        if (prop.quorum > 100) revert InvalidQuorum();
 
-        // Check proposal payload.
+        // Check proposal payload and throws when payload cannot be decoded.
         handlePayload(false, prop.action, prop.payload);
 
-        // Store prop settings.
+        // Create proposal.
         Proposal storage p = proposals[++proposalId];
-        p.status = Status.ACTIVE;
-        p.action = prop.action;
-        p.tally = prop.tally;
-        p.quorum = prop.quorum;
-
-        // Store prop data.
         p.timestamp = uint40(block.timestamp);
         p.proposer = msg.sender;
-        p.payload = prop.payload;
-        p.doc = prop.doc;
 
-        // Store allowlist.
+        // Store voting procedure.
+        p.tally = prop.tally;
+        p.quorum = prop.quorum;
         p.roles = prop.roles;
         p.weights = prop.weights;
         p.spots = prop.spots;
+
+        // Store proposed action.
+        p.action = prop.action;
+        p.payload = prop.payload;
+        p.doc = prop.doc;
     }
 
     function cancel(uint256 propId) external {
         Proposal storage p = proposals[propId];
+        if (p.proposer != msg.sender) revert Denied();
         if (
             p.proposer == msg.sender &&
             (p.status == Status.ACTIVE || p.status == Status.SPONSORED)
@@ -166,9 +101,9 @@ contract Governor {
         } else revert Denied();
     }
 
-    function sponsor(uint256 propId) external onlyCredited undenounced {
+    function sponsor(uint256 propId) external credited undenounced {
         Proposal storage p = proposals[propId];
-        if (p.proposer == msg.sender) revert Denied();
+        if (p.proposer == msg.sender) revert NotOriginalProposer();
 
         bool hasRole;
         uint256 length = p.roles.length;
@@ -181,71 +116,69 @@ contract Governor {
         // Sponsor proposal.
         if (hasRole && p.status == Status.ACTIVE) {
             p.status = Status.SPONSORED;
-        } else revert Denied();
+        } else revert PropNotReady();
     }
 
     // User may vote until proposal is processed.
     function vote(
         bool yay,
         uint256 propId,
-        uint256 ballotId,
         uint256 role,
         uint256 amount
-    ) external onlyCredited returns (bool) {
+    ) external undenounced {
+        Ballot storage b;
+        Proposal storage p = proposals[propId];
+
+        // Prop not ready to be voted on.
+        if (p.status != Status.SPONSORED) revert PropNotReady();
+
+        // Verify role.
+        if (!Bulletin(bulletin).hasAnyRole(msg.sender, role))
+            revert InvalidVoter();
+
         // Insufficient `Bulletin.Credit.limit`.
         IBulletin.Credit memory c = IBulletin(bulletin).getCredit(msg.sender);
         if (c.limit == 0) revert Denied();
 
-        Proposal storage p = proposals[propId];
-        if (p.status == Status.SPONSORED || p.status == Status.GRACE) {
-            Ballot storage b;
+        // Cap number of votes by voters' at credit limit.
+        (amount > c.limit) ? amount = c.limit : amount;
 
-            // Check role and retrieve weights to scale vote.
-            bool hasRole;
-            uint256 weight;
-            uint256 length = p.roles.length;
-            for (uint256 i; i < length; ++i) {
-                if (
-                    role == p.roles[i] &&
-                    Bulletin(bulletin).hasAnyRole(msg.sender, role)
-                ) {
-                    hasRole = true;
-                    weight = p.weights[i];
-                    if (ballotId == 0) --p.spots[i];
-                    break;
-                }
+        // If voter role is qualified to vote on proposal, retrieve voting weight.
+        uint256 weight;
+        uint256 length = p.roles.length;
+        uint256 ballotId = hasVoted(propId, msg.sender);
+        for (uint256 i; i < length; ++i) {
+            if (role == p.roles[i]) {
+                if (ballotId == 0) --p.spots[i];
+                weight = p.weights[i];
             }
+        }
 
-            if (ballotId == 0) {
-                // Compute new ballotId.
-                ballotId = ++ballotIdsPerProposal[propId];
-                b = ballots[propId][ballotId];
-                b.voter = msg.sender;
-            } else {
-                b = ballots[propId][ballotId];
-                // Not original voter.
-                if (b.voter != msg.sender) revert Denied();
-            }
+        // Get ballot and update/verify voter.
+        if (ballotId == 0) {
+            b = ballots[propId][++ballotIdsPerProposal[propId]];
+            b.voter = msg.sender;
+        } else {
+            // Verify original voter.
+            b = ballots[propId][ballotId];
+            if (b.voter != msg.sender) revert NotOriginalVoter();
+        }
 
-            // Store vote.
-            b.yay = yay;
-            b.amount = (weight == 0)
-                ? 1e18 // one address one vote
-                : ((amount > c.limit) ? c.limit : amount) * weight;
-        } else revert Denied();
+        // Update ballot.
+        b.vote = yay;
+        b.amount = (weight == 0) ? 1 ether : amount * weight;
 
-        // todo. do we need to check if status is in grace period?
-        if (isQuorumSatisfied(ballotId, p) && p.status == Status.SPONSORED) {
+        // If quorum is satisfied, update proposal status.
+        if (isQuorum(ballotIdsPerProposal[propId], p)) {
             p.timestamp = uint40(block.timestamp);
             p.status = Status.GRACE;
-            return true;
-        } else return false;
+        }
     }
 
     function process(uint256 propId) external {
         // Proposal not ready to process.
         Proposal storage p = proposals[propId];
-        if (p.status != Status.GRACE) revert Denied();
+        if (p.status != Status.GRACE) revert PropNotReady();
 
         uint256 ids = ballotIdsPerProposal[propId];
         if (uint40(block.timestamp) > gracePeriod + p.timestamp) {
@@ -257,10 +190,10 @@ contract Governor {
             for (uint256 i; i < ids; ++i) {
                 b = ballots[propId][ids];
                 if (p.tally == Tally.QUADRATIC)
-                    (b.yay)
+                    (b.vote)
                         ? yTotal += FixedPointMathLib.sqrt(b.amount)
                         : nTotal += FixedPointMathLib.sqrt(b.amount);
-                else (b.yay) ? yTotal += b.amount : nTotal += b.amount;
+                else (b.vote) ? yTotal += b.amount : nTotal += b.amount;
             }
 
             // Execute if passed.
@@ -274,34 +207,93 @@ contract Governor {
                 if (yTotal > (2 * (yTotal + nTotal)) / 3)
                     handlePayload(true, p.action, p.payload);
             }
-        }
+        } else revert PropNotReady();
     }
 
-    function object(
-        uint256 propId,
-        string calldata obj
-    ) external onlyCredited undenounced {
-        if (proposalId > propId) {
-            Proposal storage p = proposals[propId];
-            if (p.status == Status.GRACE) {
-                // Derive dynamic number of co-signs from total ballots.
-                uint256 total;
-                for (uint256 i = 1; i <= proposalId; ++i) {
-                    total += ballotIdsPerProposal[i];
-                }
+    /* -------------------------------------------------------------------------- */
+    /*                                Improvements.                               */
+    /* -------------------------------------------------------------------------- */
 
-                // Dynamic co-signs
-                if (
-                    (total / proposalId) / 3 > objectionIdsPerProposal[propId]
-                ) {
-                    uint256 id = ++objectionIdsPerProposal[propId];
-                    objections[propId][id].user = msg.sender;
-                    objections[propId][id].content = obj;
-                } else {
-                    // todo. extend grace period, i.e., update p.timestamp
-                }
-            } else revert Denied();
-        } else revert Denied();
+    // Suggest executable improvements.
+    function raise(
+        uint256 propId,
+        Improvement calldata _imp
+    ) external credited undenounced {
+        Improvement storage imp;
+        Proposal storage p = proposals[propId];
+        if (p.status != Status.GRACE) revert PropNotReady();
+
+        // Validate roles and action/payload.
+        if (_imp.payload.length > 0)
+            handlePayload(false, _imp.action, _imp.payload);
+
+        if (_imp.roles.length > 0) {
+            if (_imp.roles.length != _imp.weights.length)
+                revert LengthMismatch();
+            if (_imp.weights.length != _imp.spots.length)
+                revert LengthMismatch();
+        }
+
+        // Retrieve previous improvement, if available.
+        uint256 impId = hasRaisedImprovement(propId, msg.sender);
+
+        // Create new improvement or verify previous improvement.
+        if (impId == 0) {
+            imp = improvements[propId][++improvementIdsPerProposal[propId]];
+            imp.proposer = msg.sender;
+        } else {
+            imp = improvements[propId][impId];
+            if (imp.cosigns != 0) revert Denied();
+        }
+
+        // Store improvement.
+        imp.subject = _imp.subject;
+        if (bytes(_imp.doc).length > 0) imp.doc = _imp.doc;
+
+        if (_imp.subject == Subject.ACTION) {
+            if (bytes(_imp.payload).length == 0) revert Denied();
+            imp.action = _imp.action;
+            imp.payload = _imp.payload;
+            if (bytes(_imp.doc).length > 0) imp.doc = _imp.doc;
+        } else if (_imp.subject == Subject.ROLES) {
+            if (_imp.roles.length == 0) revert Denied();
+            imp.roles = _imp.roles;
+            imp.weights = _imp.weights;
+            imp.spots = _imp.spots;
+            if (bytes(_imp.doc).length > 0) imp.doc = _imp.doc;
+        } else if (_imp.subject == Subject.ACTION_AND_ROLES) {
+            if (bytes(_imp.payload).length == 0) revert Denied();
+            imp.action = _imp.action;
+            imp.payload = _imp.payload;
+            if (_imp.roles.length == 0) revert Denied();
+            imp.roles = _imp.roles;
+            imp.weights = _imp.weights;
+            imp.spots = _imp.spots;
+            if (bytes(_imp.doc).length > 0) imp.doc = _imp.doc;
+        } else if (_imp.subject == Subject.ACTION_AND_ROLES) imp.doc = _imp.doc;
+    }
+
+    function cosign(
+        uint256 propId,
+        uint256 impId
+    ) external credited undenounced {
+        Proposal storage p = proposals[propId];
+        Improvement storage imp = improvements[propId][impId];
+        if (imp.proposer == address(0)) revert ImpNotReady();
+
+        // Increment improvement cosign.
+        unchecked {
+            ++imp.cosigns;
+        }
+
+        // Pause proposal for deliberation.
+        if (p.status != Status.PAUSED_FOR_IMPROVEMENT)
+            p.status = Status.PAUSED_FOR_IMPROVEMENT;
+        p.timestamp = uint40(block.timestamp);
+    }
+
+    function amend() external {
+        // effectuate improvement
     }
 
     /* -------------------------------------------------------------------------- */
@@ -309,7 +301,7 @@ contract Governor {
     /* -------------------------------------------------------------------------- */
 
     function handlePayload(
-        bool passed,
+        bool execute,
         Action action,
         bytes memory payload
     ) internal returns (bool) {
@@ -326,7 +318,7 @@ contract Governor {
             action == Action.ACTIVATE_CREDIT || action == Action.ADJUST_CREDIT
         ) {
             (addr, number) = abi.decode(payload, (address, uint256));
-            if (passed) credit(action, addr, number);
+            if (execute) credit(action, addr, number);
         } else if (
             action == Action.POST_REQUEST || action == Action.UPDATE_REQUEST
         ) {
@@ -334,7 +326,7 @@ contract Governor {
                 payload,
                 (uint256, IBulletin.Request)
             );
-            if (passed) post(action, subjectId, req, res);
+            if (execute) post(action, subjectId, req, res);
         } else if (
             action == Action.POST_RESOURCE || action == Action.UPDATE_RESOURCE
         ) {
@@ -342,7 +334,7 @@ contract Governor {
                 payload,
                 (uint256, IBulletin.Resource)
             );
-            if (passed) post(action, subjectId, req, res);
+            if (execute) post(action, subjectId, req, res);
         } else if (
             action == Action.APPROVE_RESPONSE ||
             action == Action.APPROVE_EXCHANGE
@@ -352,47 +344,71 @@ contract Governor {
                 payload,
                 (uint256, uint256, uint256, uint40)
             );
-            if (passed) approve(action, subjectId, tradeId, number, duration);
+            if (execute) approve(action, subjectId, tradeId, number, duration);
         } else if (action == Action.TRADE) {
             (tt, subjectId, t) = abi.decode(
                 payload,
                 (IBulletin.TradeType, uint256, IBulletin.Trade)
             );
-            if (passed) trade(tt, subjectId, t);
+            if (execute) trade(tt, subjectId, t);
         } else if (
             action == Action.WITHDRAW_REQUEST ||
             action == Action.WITHDRAW_RESOURCE
         ) {
             subjectId = abi.decode(payload, (uint256));
-            if (passed) withdraw(action, tt, subjectId, tradeId);
+            if (execute) withdraw(action, tt, subjectId, tradeId);
         } else if (action == Action.WITHDRAW_TRADE) {
             (tt, subjectId, tradeId) = abi.decode(
                 payload,
                 (IBulletin.TradeType, uint256, uint256)
             );
-            if (passed) withdraw(action, tt, subjectId, tradeId);
+            if (execute) withdraw(action, tt, subjectId, tradeId);
         } else if (action == Action.CLAIM) {
             (tt, subjectId, tradeId) = abi.decode(
                 payload,
                 (IBulletin.TradeType, uint256, uint256)
             );
-            if (passed) claim(tt, subjectId, tradeId);
+            if (execute) claim(tt, subjectId, tradeId);
         } else if (action == Action.PAUSE) {
             (subjectId, tradeId) = abi.decode(payload, (uint256, uint256));
-            if (passed) pause(subjectId, tradeId);
+            if (execute) pause(subjectId, tradeId);
         } else return false;
         return true;
     }
 
-    function isQuorumSatisfied(
-        uint256 ballotId,
+    function isQuorum(
+        uint256 votes,
         Proposal storage p
     ) internal view returns (bool) {
-        // Quorum not met.
+        uint256 totalVotes;
         uint256 length = p.spots.length;
-        uint256 sTotal = ballotId;
-        for (uint256 i; i < length; ++i) sTotal += p.spots[i];
-        return ((ballotId * 100) / sTotal >= p.quorum);
+        for (uint256 i; i < length; ++i) totalVotes += p.spots[i];
+        return ((votes * 100) / totalVotes >= p.quorum);
+    }
+
+    function hasVoted(
+        uint256 propId,
+        address voter
+    ) internal view returns (uint256 id) {
+        uint256 length = ballotIdsPerProposal[propId];
+
+        Ballot storage b;
+        for (uint256 i; i < length; ++i) {
+            b = ballots[propId][i];
+            if (b.voter == voter) return i;
+        }
+    }
+
+    function hasRaisedImprovement(
+        uint256 propId,
+        address proposer
+    ) internal view returns (uint256 id) {
+        Improvement storage imp;
+        uint256 length = improvementIdsPerProposal[propId];
+        for (uint256 i; i < length; ++i) {
+            imp = improvements[propId][i];
+            if (imp.proposer == proposer) return i;
+        }
     }
 
     function credit(Action action, address user, uint256 limit) internal {
@@ -474,6 +490,28 @@ contract Governor {
 
     function pause(uint256 subjectId, uint256 tradeId) internal {
         IBulletin(bulletin).pause(subjectId, tradeId);
+    }
+
+    /* -------------------------------------------------------------------------- */
+    /*                                 Public Get.                                */
+    /* -------------------------------------------------------------------------- */
+
+    function getProposal(uint256 id) external view returns (Proposal memory) {
+        return proposals[id];
+    }
+
+    function getBallot(
+        uint256 propId,
+        uint256 ballotId
+    ) external view returns (Ballot memory) {
+        return ballots[propId][ballotId];
+    }
+
+    function getImprovement(
+        uint256 propId,
+        uint256 impId
+    ) external view returns (Improvement memory) {
+        return improvements[propId][impId];
     }
 
     receive() external payable {}

@@ -1007,6 +1007,7 @@ contract BulletinTest_Engage is Test, BulletinTest {
         vm.assume(20 ether > amount);
         vm.assume(timestamp > duration);
         vm.assume(timestamp2 > timestamp);
+        vm.assume(type(uint40).max - 2 > timestamp2);
 
         // pre-claim flow
         uint256 resourceId = postResource(owner);
@@ -1061,7 +1062,7 @@ contract BulletinTest_Engage is Test, BulletinTest {
         assertEq(trade.paused, false);
         assertEq(trade.amount, amount - amountStreamed);
         assertEq(trade.duration, remainingTime);
-        assertEq(trade.timestamp, timestamp);
+        assertEq(trade.timestamp, timestamp2);
 
         vm.prank(owner);
         bulletin.approve(owner, tokenId, 100);
@@ -1075,6 +1076,7 @@ contract BulletinTest_Engage is Test, BulletinTest {
         bulletin.transferFrom(alice, owner, tokenId, 2);
         assertEq(bulletin.balanceOf(owner, tokenId), 2);
 
+        vm.warp(timestamp2 + 1);
         vm.prank(owner);
         vm.expectRevert(IBulletin.Denied.selector);
         bulletin.access(resourceId, tradeId);
