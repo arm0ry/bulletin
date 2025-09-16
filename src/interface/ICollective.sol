@@ -8,9 +8,10 @@ interface ICollective {
     enum Status {
         ACTIVE,
         SPONSORED,
+        DELIBERATION,
+        AMENDED,
         GRACE,
         PROCESSED,
-        PAUSED_FOR_IMPROVEMENT,
         CANCELLED
     }
 
@@ -40,9 +41,8 @@ interface ICollective {
     // Improvement Enums.
     enum Subject {
         ACTION,
-        ROLES,
-        ACTION_AND_ROLES,
-        RATIONALE
+        SETTING, // revote
+        ACTION_AND_SETTING // revote
     }
 
     /* -------------------------------------------------------------------------- */
@@ -53,6 +53,7 @@ interface ICollective {
         Status status;
         Action action;
         Tally tally;
+        uint8 targetProp; // reserved for improvement proposals
         uint8 quorum;
         uint40 timestamp;
         address proposer;
@@ -68,18 +69,6 @@ interface ICollective {
         bool vote;
         address voter;
         uint256 amount;
-    }
-
-    struct Improvement {
-        Subject subject;
-        uint8 cosigns;
-        address proposer;
-        Action action;
-        bytes payload; // proposal content
-        string doc;
-        uint256[] roles;
-        uint256[] weights; // unsigned integer, 0 decimal
-        uint256[] spots; // unsigned integer, 0 decimal
     }
 
     /* -------------------------------------------------------------------------- */
@@ -105,9 +94,10 @@ interface ICollective {
     /*                                 Governance.                                */
     /* -------------------------------------------------------------------------- */
 
-    function propose(Proposal calldata prop) external;
-    function cancel(uint256 propId) external;
+    function propose(uint256 propId, Proposal calldata prop) external;
+    function raise(uint256 propId, Proposal calldata prop) external;
     function sponsor(uint256 propId) external;
+    function cancel(uint256 propId) external;
     function vote(
         bool vote,
         uint256 propId,
@@ -115,7 +105,6 @@ interface ICollective {
         uint256 amount
     ) external;
     function process(uint256 propId) external;
-    function raise(uint256 propId, Improvement calldata imp) external;
 
     /* -------------------------------------------------------------------------- */
     /*                      Public / External View Functions.                     */
@@ -126,8 +115,4 @@ interface ICollective {
         uint256 propId,
         uint256 ballotId
     ) external view returns (Ballot memory);
-    function getImprovement(
-        uint256 propId,
-        uint256 impId
-    ) external view returns (Improvement memory);
 }
