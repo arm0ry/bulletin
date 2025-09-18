@@ -74,41 +74,31 @@ contract Collective is ICollective {
         Proposal calldata prop
     ) external credited undenounced {
         Proposal storage p = proposals[prop.targetProp];
-        if (p.status != Status.GRACE) revert PropNotReady();
+        if (p.status != Status.SPONSORED) revert PropNotReady();
 
         _propose(true, propId, prop);
     }
 
     /* -------------------------------------------------------------------------- */
-    /*                              Modify Proposals.                             */
+    /*                              Update Proposals.                             */
     /* -------------------------------------------------------------------------- */
 
     function sponsor(uint256 propId) external credited undenounced {
         Proposal storage p = proposals[propId];
-        if (p.proposer == msg.sender) revert NotOriginalProposer();
+        if (p.proposer == msg.sender) revert Denied();
+        if (p.status != Status.ACTIVE) revert PropNotReady();
 
-        bool hasRole;
+        // Check role.
         uint256 length = p.roles.length;
-        for (uint256 i; i < length; ++i) {
-            // Check role.
+        for (uint256 i; i < length; ++i)
             if (Bulletin(bulletin).hasAnyRole(msg.sender, p.roles[i]))
-                hasRole = true;
-        }
-
-        // Sponsor proposal.
-        if (hasRole && p.status == Status.ACTIVE) {
-            if (p.targetProp == 0) p.status = Status.SPONSORED;
-            else p.status = Status.DELIBERATION;
-        } else revert PropNotReady();
+                p.status = Status.SPONSORED;
     }
 
     function cancel(uint256 propId) external {
         Proposal storage p = proposals[propId];
         if (p.proposer != msg.sender) revert NotOriginalProposer();
-        if (
-            p.proposer == msg.sender &&
-            (p.status == Status.ACTIVE || p.status == Status.SPONSORED)
-        ) {
+        if (p.status == Status.ACTIVE || p.status == Status.SPONSORED) {
             p.status = Status.CANCELLED;
         } else revert PropNotReady();
     }
@@ -125,11 +115,11 @@ contract Collective is ICollective {
         if (p.proposer != msg.sender) revert NotOriginalProposer();
 
         if (subject == Subject.ACTION) {
-            // `Subject.ACTION` amendments can process immediately
+            // todo: `Subject.ACTION` amendments can process immediately
         } else if (
             subject == Subject.SETTING || subject == Subject.ACTION_AND_SETTING
         ) {
-            // `Subject.SETTING` and `Subject.ACTION_AND_SETTING` amendments require revote
+            // todo: `Subject.SETTING` and `Subject.ACTION_AND_SETTING` amendments require revote
         }
 
         if (bytes(doc).length != 0) {
@@ -142,9 +132,10 @@ contract Collective is ICollective {
     /*                               Vote & Process.                              */
     /* -------------------------------------------------------------------------- */
 
-    // User may vote until proposal is processed.
+    // Voter may vote until proposal is processed.
+    // If voter has multiple roles, Voter may pick a role to vote with
     function vote(
-        bool yay,
+        bool decision,
         uint256 propId,
         uint256 role,
         uint256 amount
@@ -155,10 +146,6 @@ contract Collective is ICollective {
         // Prop not ready to be voted on.
         if (p.status != Status.SPONSORED) revert PropNotReady();
 
-        // Verify role.
-        if (!Bulletin(bulletin).hasAnyRole(msg.sender, role))
-            revert InvalidVoter();
-
         // Insufficient `Bulletin.Credit.limit`.
         IBulletin.Credit memory c = IBulletin(bulletin).getCredit(msg.sender);
         if (c.limit == 0) revert Denied();
@@ -166,50 +153,43 @@ contract Collective is ICollective {
         // Cap number of votes by voters' at credit limit.
         (amount > c.limit) ? amount = c.limit : amount;
 
-        // If voter role is qualified to vote on proposal, retrieve voting weight.
-        uint256 weight;
+        // If voter role is qualified to vote on proposal, add/update ballot.
+        bool isQualified;
         uint256 length = p.roles.length;
         uint256 ballotId = hasVoted(propId, msg.sender);
         for (uint256 i; i < length; ++i) {
             if (role == p.roles[i]) {
-                if (ballotId == 0) --p.spots[i];
-                weight = p.weights[i];
+                if (ballotId == 0) {
+                    --p.spots[i];
+                    isQualified = true;
+
+                    b = ballots[propId][++ballotIdsPerProposal[propId]];
+                    b.voter = msg.sender;
+                    b.vote = decision;
+                    b.amount = (p.weights[i] == 0)
+                        ? 1 ether
+                        : amount * p.weights[i];
+                } else {
+                    // Verify original voter.
+                    b = ballots[propId][ballotId];
+                    if (b.voter != msg.sender) revert NotOriginalVoter();
+                    b.vote = decision;
+                    b.amount = (p.weights[i] == 0)
+                        ? 1 ether
+                        : amount * p.weights[i];
+                }
             }
         }
+        if (!isQualified) revert InvalidVoter();
 
-        // Get ballot and update/verify voter.
-        if (ballotId == 0) {
-            b = ballots[propId][++ballotIdsPerProposal[propId]];
-            b.voter = msg.sender;
-        } else {
-            // Verify original voter.
-            b = ballots[propId][ballotId];
-            if (b.voter != msg.sender) revert NotOriginalVoter();
+        // Check quorum.
+        if (atQuorum(ballotIdsPerProposal[propId], p)) {
+            // if improvement prop exists and sponsored, prop moves to deliberation
+            // otherwise, count votes to execute prop
+            if (toDeliberate(propId)) p.status = Status.DELIBERATION;
+            else if (passProposal(propId, ballotIdsPerProposal[propId], p))
+                handlePayload(true, p.action, p.payload);
         }
-
-        // Update ballot.
-        b.vote = yay;
-        b.amount = (weight == 0) ? 1 ether : amount * weight;
-
-        // If quorum is satisfied, update proposal status.
-        // todo: quorum + vote decision
-        if (isQuorum(ballotIdsPerProposal[propId], p)) {
-            p.timestamp = uint40(block.timestamp);
-            p.status = Status.GRACE;
-        }
-    }
-
-    // todo: deprecate `process` in favor of auto-processing when voting hits quorum and passing threshold
-    function process(uint256 propId) external {
-        // Proposal not ready to process.
-        Proposal storage p = proposals[propId];
-        if (
-            p.status != Status.GRACE ||
-            gracePeriod + p.timestamp >= uint40(block.timestamp)
-        ) revert PropNotReady();
-
-        // Execute.
-        handlePayload(true, p.action, p.payload);
     }
 
     /* -------------------------------------------------------------------------- */
@@ -243,8 +223,6 @@ contract Collective is ICollective {
         }
 
         unchecked {
-            p.timestamp = uint40(block.timestamp);
-
             // Store vote setting.
             p.tally = prop.tally;
             if (isImprovementProp) p.targetProp = prop.targetProp;
@@ -336,16 +314,6 @@ contract Collective is ICollective {
         return true;
     }
 
-    function isQuorum(
-        uint256 votes,
-        Proposal storage p
-    ) internal view returns (bool) {
-        uint256 totalVotes;
-        uint256 length = p.spots.length;
-        for (uint256 i; i < length; ++i) totalVotes += p.spots[i];
-        return ((votes * 100) / totalVotes >= p.quorum);
-    }
-
     function hasVoted(
         uint256 propId,
         address voter
@@ -359,15 +327,38 @@ contract Collective is ICollective {
         }
     }
 
-    function countVotes() internal {
+    function atQuorum(
+        uint256 numOfBallots,
+        Proposal storage p
+    ) internal view returns (bool) {
+        uint256 totalBallots;
+        uint256 length = p.spots.length;
+        for (uint256 i; i < length; ++i) totalBallots += p.spots[i];
+        return ((numOfBallots * 100) / totalBallots >= p.quorum);
+    }
+
+    function toDeliberate(uint256 propId) internal view returns (bool) {
+        Proposal storage p;
+        for (uint256 i; i < proposalId; ++i) {
+            p = proposals[i];
+            if (p.targetProp == propId && p.status == Status.SPONSORED)
+                return true;
+        }
+    }
+
+    function passProposal(
+        uint256 propId,
+        uint256 numOfBallots,
+        Proposal storage p
+    ) internal returns (bool passed) {
         uint256 yTotal;
         uint256 nTotal;
         Ballot storage b;
 
         unchecked {
             // Count votes.
-            for (uint256 i; i < ids; ++i) {
-                b = ballots[propId][ids];
+            for (uint256 i; i < numOfBallots; ++i) {
+                b = ballots[propId][i];
                 if (p.tally == Tally.QUADRATIC)
                     (b.vote)
                         ? yTotal += FixedPointMathLib.sqrt(b.amount)
@@ -375,16 +366,11 @@ contract Collective is ICollective {
                 else (b.vote) ? yTotal += b.amount : nTotal += b.amount;
             }
 
-            // Execute if passed.
-            if (
-                p.tally == Tally.SIMPLE_MAJORITY || p.tally == Tally.QUADRATIC
-            ) {
-                // Execute.
-                if (yTotal > nTotal) handlePayload(true, p.action, p.payload);
+            // Decide if proposal passes.
+            if (p.tally == Tally.SUPERMAJORITY) {
+                if (yTotal > (2 * (yTotal + nTotal)) / 3) passed = true;
             } else {
-                // Execute.
-                if (yTotal > (2 * (yTotal + nTotal)) / 3)
-                    handlePayload(true, p.action, p.payload);
+                if (yTotal > nTotal) passed = true;
             }
         }
     }

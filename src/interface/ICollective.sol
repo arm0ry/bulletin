@@ -10,7 +10,6 @@ interface ICollective {
         SPONSORED,
         DELIBERATION,
         AMENDED,
-        GRACE,
         PROCESSED,
         CANCELLED
     }
@@ -55,7 +54,6 @@ interface ICollective {
         Tally tally;
         uint8 targetProp; // reserved for improvement proposals
         uint8 quorum;
-        uint40 timestamp;
         address proposer;
         bytes payload;
         string doc;
@@ -104,7 +102,6 @@ interface ICollective {
         uint256 role,
         uint256 amount
     ) external;
-    function process(uint256 propId) external;
 
     /* -------------------------------------------------------------------------- */
     /*                      Public / External View Functions.                     */
