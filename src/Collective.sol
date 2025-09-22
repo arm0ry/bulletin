@@ -49,6 +49,8 @@ contract Collective is ICollective {
         _;
     }
 
+    // todo: a function to cancel proposals by denounced users to remove and avoid any improvement proposals from blocking targeted proposals.
+
     modifier credited() {
         // Insufficient `Bulletin.Credit.limit`.
         IBulletin.Credit memory c = IBulletin(bulletin).getCredit(msg.sender);
@@ -92,7 +94,9 @@ contract Collective is ICollective {
         uint256 length = p.roles.length;
         for (uint256 i; i < length; ++i)
             if (Bulletin(bulletin).hasAnyRole(msg.sender, p.roles[i]))
-                p.status = Status.SPONSORED;
+                (p.targetProp == 0)
+                    ? p.status = Status.SPONSORED
+                    : p.status = Status.COSIGNED;
     }
 
     function cancel(uint256 propId) external {
@@ -104,27 +108,52 @@ contract Collective is ICollective {
     }
 
     // amend prop by requiring proposal proposer and improvement proposer to sign off. Proposers should represent the collective.
-    function amend(uint256 propId, Subject subject) external undenounced {
-        Proposal storage p = proposals[propId];
-        if (p.status != Status.DELIBERATION) revert PropNotReady();
+    function amend(
+        Subject subject,
+        uint256 propId,
+        uint256 impPropId,
+        string memory doc
+    ) external undenounced {
+        Proposal storage prop = proposals[propId];
+        if (prop.status != Status.DELIBERATION) revert PropNotReady();
+        if (prop.proposer != msg.sender) revert NotOriginalProposer();
 
-        string memory doc = p.doc;
+        Proposal storage impProp = proposals[impPropId];
+        if (prop.status != Status.COSIGNED) revert PropNotReady();
 
-        // Proposer of target proposal can amend.
-        p = proposals[p.targetProp];
-        if (p.proposer != msg.sender) revert NotOriginalProposer();
-
-        if (subject == Subject.ACTION) {
-            // todo: `Subject.ACTION` amendments can process immediately
-        } else if (
-            subject == Subject.SETTING || subject == Subject.ACTION_AND_SETTING
-        ) {
-            // todo: `Subject.SETTING` and `Subject.ACTION_AND_SETTING` amendments require revote
+        // Update `doc` when available.
+        if (bytes(impProp.doc).length != 0) {
+            impProp.doc = LibString.concat(", ", impProp.doc);
+            prop.doc = LibString.concat(prop.doc, impProp.doc);
         }
 
+        // Update `doc` when available.
         if (bytes(doc).length != 0) {
             doc = LibString.concat(", ", doc);
-            doc = LibString.concat(p.doc, doc);
+            prop.doc = LibString.concat(prop.doc, doc);
+        }
+
+        if (subject == Subject.ACTION) {
+            // `Subject.ACTION` amendments can process immediately
+            process(true, impProp.action, impProp.payload);
+            impProp.status = Status.PROCESSED;
+        } else if (subject == Subject.SETTING) {
+            // `Subject.SETTING` amendments require voting on impProp
+            impProp.status = Status.APPROVED;
+        } else {
+            impProp.status = Status.REJECTED;
+        }
+    }
+
+    function removeDenounced(address user) external {
+        if (
+            Bulletin(bulletin).hasAnyRole(
+                msg.sender,
+                Bulletin(bulletin).DENOUNCED()
+            )
+        ) {
+            // todo. remove all props, ballots, and improvements
+            // todo. maybe except props that have already finalized
         }
     }
 
@@ -142,9 +171,8 @@ contract Collective is ICollective {
     ) external undenounced {
         Ballot storage b;
         Proposal storage p = proposals[propId];
-
-        // Prop not ready to be voted on.
-        if (p.status != Status.SPONSORED) revert PropNotReady();
+        if (p.status != Status.SPONSORED && p.status != Status.APPROVED)
+            revert PropNotReady();
 
         // Insufficient `Bulletin.Credit.limit`.
         IBulletin.Credit memory c = IBulletin(bulletin).getCredit(msg.sender);
@@ -159,9 +187,9 @@ contract Collective is ICollective {
         uint256 ballotId = hasVoted(propId, msg.sender);
         for (uint256 i; i < length; ++i) {
             if (role == p.roles[i]) {
+                isQualified = true;
                 if (ballotId == 0) {
                     --p.spots[i];
-                    isQualified = true;
 
                     b = ballots[propId][++ballotIdsPerProposal[propId]];
                     b.voter = msg.sender;
@@ -186,10 +214,17 @@ contract Collective is ICollective {
         if (atQuorum(ballotIdsPerProposal[propId], p)) {
             // if improvement prop exists and sponsored, prop moves to deliberation
             // otherwise, count votes to execute prop
-            if (toDeliberate(propId)) p.status = Status.DELIBERATION;
-            else if (passProposal(propId, ballotIdsPerProposal[propId], p))
-                handlePayload(true, p.action, p.payload);
-        }
+            if (p.targetProp == 0 && toDeliberate(propId))
+                p.status = Status.DELIBERATION;
+            return;
+
+            if (passProposal(propId, ballotIdsPerProposal[propId], p)) {
+                process(true, p.action, p.payload);
+                p.status = Status.PROCESSED;
+            } else {
+                p.status = Status.UNSUCCESSFUL;
+            }
+        } else return;
     }
 
     /* -------------------------------------------------------------------------- */
@@ -210,7 +245,7 @@ contract Collective is ICollective {
         if (prop.quorum > 100) revert InvalidQuorum();
 
         // Check proposal payload and throws when payload cannot be decoded.
-        handlePayload(false, prop.action, prop.payload);
+        process(false, prop.action, prop.payload);
 
         // Create proposal.
         Proposal storage p;
@@ -238,11 +273,11 @@ contract Collective is ICollective {
         }
     }
 
-    function handlePayload(
+    function process(
         bool execute,
         Action action,
         bytes memory payload
-    ) internal returns (bool) {
+    ) internal {
         address addr;
         uint256 subjectId;
         uint256 tradeId;
@@ -310,8 +345,7 @@ contract Collective is ICollective {
         } else if (action == Action.PAUSE) {
             (subjectId, tradeId) = abi.decode(payload, (uint256, uint256));
             if (execute) pause(subjectId, tradeId);
-        } else return false;
-        return true;
+        }
     }
 
     function hasVoted(
@@ -339,6 +373,7 @@ contract Collective is ICollective {
 
     function toDeliberate(uint256 propId) internal view returns (bool) {
         Proposal storage p;
+        // Loops through all proposals for improvement proposals.
         for (uint256 i; i < proposalId; ++i) {
             p = proposals[i];
             if (p.targetProp == propId && p.status == Status.SPONSORED)

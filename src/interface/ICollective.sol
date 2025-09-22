@@ -9,8 +9,11 @@ interface ICollective {
         ACTIVE,
         SPONSORED,
         DELIBERATION,
-        AMENDED,
+        COSIGNED,
+        APPROVED,
+        REJECTED,
         PROCESSED,
+        UNSUCCESSFUL,
         CANCELLED
     }
 
@@ -40,8 +43,8 @@ interface ICollective {
     // Improvement Enums.
     enum Subject {
         ACTION,
-        SETTING, // revote
-        ACTION_AND_SETTING // revote
+        SETTING,
+        REJECT
     }
 
     /* -------------------------------------------------------------------------- */
