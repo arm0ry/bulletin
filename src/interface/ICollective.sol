@@ -14,7 +14,8 @@ interface ICollective {
         REJECTED,
         PROCESSED,
         UNSUCCESSFUL,
-        CANCELLED
+        CANCELLED,
+        CLOSED
     }
 
     enum Tally {
@@ -24,6 +25,7 @@ interface ICollective {
     }
 
     enum Action {
+        NONE,
         ACTIVATE_CREDIT,
         ADJUST_CREDIT,
         POST_REQUEST,

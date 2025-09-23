@@ -14,23 +14,18 @@ import {console} from "lib/forge-std/src/console.sol";
 /// @author audsssy.eth
 contract Collective is ICollective {
     address public bulletin;
-    uint40 public gracePeriod; // auto starts after proposal meets quorum
-    uint40 public proposalId;
+    uint96 public proposalId;
 
     mapping(uint256 => Proposal) public proposals;
     mapping(uint256 => uint256) public ballotIdsPerProposal;
-    // mapping(uint256 => uint256) public improvementIdsPerProposal;
-
     mapping(uint256 => mapping(uint256 => Ballot)) public ballots;
-    // mapping(uint256 => mapping(uint256 => Improvement)) public improvements;
 
     /* -------------------------------------------------------------------------- */
     /*                                Constructor.                                */
     /* -------------------------------------------------------------------------- */
 
-    function init(address _bulletin, uint40 _grace) external {
+    function init(address _bulletin) external {
         bulletin = _bulletin;
-        gracePeriod = _grace;
     }
 
     /* -------------------------------------------------------------------------- */
@@ -48,8 +43,6 @@ contract Collective is ICollective {
 
         _;
     }
-
-    // todo: a function to cancel proposals by denounced users to remove and avoid any improvement proposals from blocking targeted proposals.
 
     modifier credited() {
         // Insufficient `Bulletin.Credit.limit`.
@@ -82,7 +75,7 @@ contract Collective is ICollective {
     }
 
     /* -------------------------------------------------------------------------- */
-    /*                              Update Proposals.                             */
+    /*                           Interact w/ Proposals.                           */
     /* -------------------------------------------------------------------------- */
 
     function sponsor(uint256 propId) external credited undenounced {
@@ -140,26 +133,16 @@ contract Collective is ICollective {
         } else if (subject == Subject.SETTING) {
             // `Subject.SETTING` amendments require voting on impProp
             impProp.status = Status.APPROVED;
-        } else {
-            impProp.status = Status.REJECTED;
-        }
+        } else impProp.status = Status.REJECTED;
     }
 
-    function removeDenounced(address user) external {
-        if (
-            Bulletin(bulletin).hasAnyRole(
-                msg.sender,
-                Bulletin(bulletin).DENOUNCED()
-            )
-        ) {
-            // todo. remove all props, ballots, and improvements
-            // todo. maybe except props that have already finalized
-        }
+    function close(uint256 propId) external credited undenounced {
+        Proposal storage prop = proposals[propId];
+        if (prop.status != Status.DELIBERATION) revert PropNotReady();
+        if (prop.proposer != msg.sender) revert NotOriginalProposer();
+        if (prop.targetProp != 0) revert Denied();
+        prop.status = Status.CLOSED;
     }
-
-    /* -------------------------------------------------------------------------- */
-    /*                               Vote & Process.                              */
-    /* -------------------------------------------------------------------------- */
 
     // Voter may vote until proposal is processed.
     // If voter has multiple roles, Voter may pick a role to vote with
@@ -214,16 +197,15 @@ contract Collective is ICollective {
         if (atQuorum(ballotIdsPerProposal[propId], p)) {
             // if improvement prop exists and sponsored, prop moves to deliberation
             // otherwise, count votes to execute prop
-            if (p.targetProp == 0 && toDeliberate(propId))
+            if (p.targetProp == 0 && toDeliberate(propId)) {
                 p.status = Status.DELIBERATION;
-            return;
+                return;
+            }
 
             if (passProposal(propId, ballotIdsPerProposal[propId], p)) {
                 process(true, p.action, p.payload);
                 p.status = Status.PROCESSED;
-            } else {
-                p.status = Status.UNSUCCESSFUL;
-            }
+            } else p.status = Status.UNSUCCESSFUL;
         } else return;
     }
 
@@ -345,7 +327,7 @@ contract Collective is ICollective {
         } else if (action == Action.PAUSE) {
             (subjectId, tradeId) = abi.decode(payload, (uint256, uint256));
             if (execute) pause(subjectId, tradeId);
-        }
+        } else return;
     }
 
     function hasVoted(
@@ -371,13 +353,15 @@ contract Collective is ICollective {
         return ((numOfBallots * 100) / totalBallots >= p.quorum);
     }
 
-    function toDeliberate(uint256 propId) internal view returns (bool) {
+    function toDeliberate(
+        uint256 propId
+    ) internal view returns (bool deliberate) {
         Proposal storage p;
         // Loops through all proposals for improvement proposals.
-        for (uint256 i; i < proposalId; ++i) {
+        for (uint256 i; i <= proposalId; ++i) {
             p = proposals[i];
             if (p.targetProp == propId && p.status == Status.SPONSORED)
-                return true;
+                deliberate = true;
         }
     }
 
@@ -385,7 +369,7 @@ contract Collective is ICollective {
         uint256 propId,
         uint256 numOfBallots,
         Proposal storage p
-    ) internal returns (bool passed) {
+    ) internal view returns (bool passed) {
         uint256 yTotal;
         uint256 nTotal;
         Ballot storage b;
@@ -494,6 +478,29 @@ contract Collective is ICollective {
     }
 
     /* -------------------------------------------------------------------------- */
+    /*                                  Helpers.                                  */
+    /* -------------------------------------------------------------------------- */
+
+    function removeDenounced(address user) external {
+        if (
+            !Bulletin(bulletin).hasAnyRole(user, Bulletin(bulletin).DENOUNCED())
+        ) revert Denied();
+
+        Proposal storage p;
+        for (uint256 i; i <= proposalId; ++i) {
+            p = proposals[i];
+            if (
+                p.status == Status.ACTIVE ||
+                p.status == Status.SPONSORED ||
+                p.status == Status.COSIGNED
+            ) {
+                uint256 id = hasVoted(i, user);
+                if (id != 0) delete ballots[i][id];
+            }
+        }
+    }
+
+    /* -------------------------------------------------------------------------- */
     /*                                 Public Get.                                */
     /* -------------------------------------------------------------------------- */
 
@@ -507,13 +514,6 @@ contract Collective is ICollective {
     ) external view returns (Ballot memory) {
         return ballots[propId][ballotId];
     }
-
-    // function getImprovement(
-    //     uint256 propId,
-    //     uint256 impId
-    // ) external view returns (Improvement memory) {
-    //     return improvements[propId][impId];
-    // }
 
     receive() external payable {}
 }

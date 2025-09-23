@@ -26,21 +26,12 @@ contract BulletinTest is Test {
     address immutable charlie = makeAddr("charlie");
     address immutable owner = makeAddr("owner");
 
-    /// @dev Roles.
-    bytes32 internal constant _OWNER_SLOT =
-        0xffffffffffffffffffffffffffffffffffffffffffffffffffffffff74873927;
-    uint40 public constant BULLETIN_ROLE = 1 << 0;
-
     /// @dev Mock Data.
-    uint40 constant PAST = 100000;
-    uint40 constant FUTURE = 2527482181;
     string TEST = "TEST";
     string TEST2 = "TEST2";
     bytes32 constant BYTES32 = bytes32("BYTES32");
     bytes constant BYTES = bytes(string("BYTES"));
     bytes constant BYTES2 = bytes(string("BYTES2"));
-
-    uint256[] itemIds;
 
     /// -----------------------------------------------------------------------
     /// Setup Tests
