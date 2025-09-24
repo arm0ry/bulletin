@@ -107,18 +107,19 @@ contract CollectiveTest_Base is Test {
         Bulletin(payable(_bulletin)).activate(user, amount);
     }
 
-    function newDocProposal(
+    function newProceduralProposal(
         address proposer,
-        uint256 quorum,
+        uint8 quorum,
+        ICollective.Tally tally,
         string memory doc
-    ) public payable returns (uint256 id) {
+    ) public returns (uint256 id) {
         bytes memory payload;
         ICollective.Proposal memory p = ICollective.Proposal({
             status: ICollective.Status.SPONSORED,
             action: ICollective.Action.NONE,
-            tally: ICollective.Tally.SIMPLE_MAJORITY,
+            tally: tally,
             targetProp: 0,
-            quorum: uint8(quorum),
+            quorum: quorum,
             proposer: proposer,
             payload: payload,
             doc: doc,
@@ -132,27 +133,149 @@ contract CollectiveTest_Base is Test {
         return collective.proposalId();
     }
 
+    function newSubstanceProposal(
+        address proposer,
+        uint8 quorum,
+        ICollective.Tally tally,
+        ICollective.Action action,
+        bytes memory payload
+    ) public returns (uint256 id) {
+        ICollective.Proposal memory p = ICollective.Proposal({
+            status: ICollective.Status.COSIGNED,
+            action: action,
+            tally: tally,
+            targetProp: 0,
+            quorum: quorum,
+            proposer: proposer,
+            payload: payload,
+            doc: TEST,
+            roles: roles,
+            weights: weights,
+            spots: spots
+        });
+        vm.prank(proposer);
+        collective.propose(0, p);
+
+        return collective.proposalId();
+    }
+
+    function getPayload_Credit(
+        address user,
+        uint256 amount
+    ) public pure returns (bytes memory) {
+        return abi.encode(user, amount);
+    }
+
+    function getPayload_Request(
+        uint256 id,
+        IBulletin.Request memory req
+    ) public pure returns (bytes memory) {
+        return abi.encode(id, req);
+    }
+    function getPayload_Resource(
+        uint256 id,
+        IBulletin.Resource memory res
+    ) public pure returns (bytes memory) {
+        return abi.encode(id, res);
+    }
+
+    function getPayload_ApproveTrade(
+        uint256 subjectId,
+        uint256 tradeId,
+        uint256 amount,
+        uint40 duration
+    ) public pure returns (bytes memory) {
+        return abi.encode(subjectId, tradeId, amount, duration);
+    }
+
+    function getPayload_Trade(
+        IBulletin.TradeType tt,
+        uint256 subjectId,
+        IBulletin.Trade memory trade
+    ) public pure returns (bytes memory) {
+        return abi.encode(tt, subjectId, trade);
+    }
+    function getPayload_Withdraw(
+        bool toWithdrawTrade,
+        uint256 subjectId,
+        IBulletin.TradeType tt,
+        uint256 tradeId
+    ) public pure returns (bytes memory) {
+        return
+            (toWithdrawTrade)
+                ? abi.encode(subjectId)
+                : abi.encode(tt, subjectId, tradeId);
+    }
+
+    function getPayload_Claim(
+        IBulletin.TradeType tt,
+        uint256 subjectId,
+        uint256 tradeId
+    ) public pure returns (bytes memory) {
+        return abi.encode(tt, subjectId, tradeId);
+    }
+
+    function getPayload_Pause(
+        uint256 subjectId,
+        uint256 tradeId
+    ) public pure returns (bytes memory) {
+        return abi.encode(subjectId, tradeId);
+    }
+
     /* -------------------------------------------------------------------------- */
     /*                                  Propose.                                  */
     /* -------------------------------------------------------------------------- */
 
-    function test_Propose_NewDoc(uint256 quorum) public {
+    function test_NewProposal_Procedural(uint8 quorum, uint8 _tally) public {
         vm.assume(quorum > 0);
         vm.assume(100 > quorum);
-        uint256 id = newDocProposal(owner, quorum, TEST);
+        vm.assume(uint8(type(ICollective.Tally).max) >= _tally);
+        ICollective.Tally tally = ICollective.Tally(_tally);
+        uint256 _id = collective.proposalId();
+        uint256 id = newProceduralProposal(owner, quorum, tally, TEST);
 
         ICollective.Proposal memory p = collective.getProposal(id);
+        assertEq(++_id, id);
         assertEq(uint8(p.status), uint8(ICollective.Status.ACTIVE));
         assertEq(uint8(p.action), uint8(ICollective.Action.NONE));
-        assertEq(uint8(p.tally), uint8(ICollective.Tally.SIMPLE_MAJORITY));
+        assertEq(uint8(p.tally), uint8(_tally));
         assertEq(p.targetProp, 0);
         assertEq(p.quorum, quorum);
         assertEq(p.proposer, owner);
         assertEq(p.payload.length, 0);
         assertEq(p.doc, TEST);
+        assertEq(p.roles[0], roles[0]);
+        assertEq(p.roles[1], roles[1]);
         assertEq(p.roles.length, roles.length);
+        assertEq(p.weights[0], weights[0]);
+        assertEq(p.weights[1], weights[1]);
         assertEq(p.weights.length, weights.length);
+        assertEq(p.spots[0], spots[0]);
+        assertEq(p.spots[1], spots[1]);
         assertEq(p.spots.length, spots.length);
+    }
+
+    function test_NewProposal_Substance_ActivateCredit() public {
+        bytes memory payload;
+        uint256 _id = collective.proposalId();
+        uint256 id = newSubstanceProposal(
+            owner,
+            10,
+            ICollective.Tally.SIMPLE_MAJORITY,
+            ICollective.Action.ACTIVATE_CREDIT,
+            payload = getPayload_Credit(charlie, 10 ether)
+        );
+
+        ICollective.Proposal memory p = collective.getProposal(id);
+        assertEq(++_id, id);
+        assertEq(uint8(p.status), uint8(ICollective.Status.ACTIVE));
+        assertEq(uint8(p.action), uint8(ICollective.Action.ACTIVATE_CREDIT));
+        assertEq(uint8(p.tally), 0);
+        assertEq(p.targetProp, 0);
+        assertEq(p.quorum, 10);
+        assertEq(p.proposer, owner);
+        assertEq(p.payload, payload);
+        assertEq(p.doc, TEST);
     }
 
     // function test_Propose_UpdateDoc() public {

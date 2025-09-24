@@ -43,9 +43,9 @@ interface ICollective {
     }
 
     // Improvement Enums.
-    enum Subject {
-        ACTION,
-        SETTING,
+    enum Amendment {
+        SUBSTANCE,
+        PROCEDURAL,
         REJECT
     }
 

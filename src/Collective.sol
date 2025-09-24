@@ -102,7 +102,7 @@ contract Collective is ICollective {
 
     // amend prop by requiring proposal proposer and improvement proposer to sign off. Proposers should represent the collective.
     function amend(
-        Subject subject,
+        Amendment amendment,
         uint256 propId,
         uint256 impPropId,
         string memory doc
@@ -126,12 +126,12 @@ contract Collective is ICollective {
             prop.doc = LibString.concat(prop.doc, doc);
         }
 
-        if (subject == Subject.ACTION) {
-            // `Subject.ACTION` amendments can process immediately
+        if (amendment == Amendment.SUBSTANCE) {
+            // `Amendment.SUBSTANCE` amendments can process immediately
             process(true, impProp.action, impProp.payload);
             impProp.status = Status.PROCESSED;
-        } else if (subject == Subject.SETTING) {
-            // `Subject.SETTING` amendments require voting on impProp
+        } else if (amendment == Amendment.PROCEDURAL) {
+            // `Amendment.PROCEDURAL` amendments require voting on impProp
             impProp.status = Status.APPROVED;
         } else impProp.status = Status.REJECTED;
     }
