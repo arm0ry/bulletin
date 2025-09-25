@@ -17,7 +17,9 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     /* -------------------------------------------------------------------------- */
 
     // `Agent` assist with activating credit limits and facilitating coordination.
-    uint8 public constant AGENT = 1 << 0;
+    // todo. consider adding or updating `AGENT` to `COLLECTIVE` so members may
+    // todo. deposit and trigger credit adjustment by collective.sol itself
+    uint8 public constant COLLECTIVE = 1 << 0;
 
     // `Denounced` has restricted access to Bulltin.
     uint8 public constant DENOUNCED = 1 << 1;
@@ -69,7 +71,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     function activate(
         address user,
         uint256 limit
-    ) public onlyOwnerOrRoles(AGENT) {
+    ) public onlyOwnerOrRoles(COLLECTIVE) {
         Credit storage c = credits[user];
         if (c.limit != 0) revert Activated();
         c.amount += limit;
@@ -80,7 +82,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     function adjust(
         address user,
         uint256 newLimit
-    ) public onlyOwnerOrRoles(AGENT) {
+    ) public onlyOwnerOrRoles(COLLECTIVE) {
         Credit storage c = credits[user];
         if (c.limit != 0) {
             unchecked {
@@ -107,12 +109,12 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     }
 
     // Post or update a `Request` by Agent
-    function requestByAgents(
-        uint256 id,
-        Request calldata _r
-    ) external onlyRoles(AGENT) {
-        _request(true, id, _r);
-    }
+    // function requestByAgents(
+    //     uint256 id,
+    //     Request calldata _r
+    // ) external onlyRoles(COLLECTIVE) {
+    //     _request(true, id, _r);
+    // }
 
     function _request(bool isAgent, uint256 id, Request calldata _r) internal {
         // Address with credit balance above a credit limit threshold may post `Request`.
@@ -158,12 +160,12 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     }
 
     // Post or update a `Resource` by Agent.
-    function resourceByAgents(
-        uint256 id,
-        Resource calldata _r
-    ) external onlyRoles(AGENT) {
-        _resource(true, id, _r);
-    }
+    // function resourceByAgents(
+    //     uint256 id,
+    //     Resource calldata _r
+    // ) external onlyRoles(COLLECTIVE) {
+    //     _resource(true, id, _r);
+    // }
 
     function _resource(
         bool isAgent,
@@ -206,13 +208,13 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     }
 
     // Post a `Trade` by Agent
-    function tradeByAgents(
-        TradeType tradeType,
-        uint256 subjectId,
-        Trade calldata _t
-    ) external onlyRoles(AGENT) {
-        _trade(true, tradeType, subjectId, _t);
-    }
+    // function tradeByAgents(
+    //     TradeType tradeType,
+    //     uint256 subjectId,
+    //     Trade calldata _t
+    // ) external onlyRoles(COLLECTIVE) {
+    //     _trade(true, tradeType, subjectId, _t);
+    // }
 
     function _trade(
         bool isAgent,
@@ -289,7 +291,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     // Withdraw a `Request`
     function withdrawRequest(uint256 id) external {
         Request storage r = requests[id];
-        if (r.from != msg.sender && rolesOf(msg.sender) != AGENT)
+        if (r.from != msg.sender && rolesOf(msg.sender) != COLLECTIVE)
             revert NotOriginalPoster();
 
         // Refund.
@@ -314,7 +316,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     // Withdraw a `Resource`
     function withdrawResource(uint256 id) external {
         Resource storage r = resources[id];
-        if (r.from != msg.sender && rolesOf(msg.sender) != AGENT)
+        if (r.from != msg.sender && rolesOf(msg.sender) != COLLECTIVE)
             revert NotOriginalPoster();
 
         // Refund unapproved trades.
@@ -457,7 +459,7 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     function updateCreditLimitToPost(
         uint256 req,
         uint256 res
-    ) external onlyOwnerOrRoles(AGENT) {
+    ) external onlyOwnerOrRoles(COLLECTIVE) {
         creditLimitToAddRequest = req;
         creditLimitToAddResource = res;
     }

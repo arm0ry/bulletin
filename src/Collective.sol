@@ -274,38 +274,56 @@ contract Collective is ICollective {
         ) {
             (addr, number) = abi.decode(payload, (address, uint256));
             if (execute) credit(action, addr, number);
-        } else if (
-            action == Action.POST_REQUEST || action == Action.UPDATE_REQUEST
-        ) {
+        } else if (action == Action.POST_OR_UPDATE_REQUEST) {
             (subjectId, req) = abi.decode(
                 payload,
                 (uint256, IBulletin.Request)
             );
-            if (execute) post(action, subjectId, req, res);
-        } else if (
-            action == Action.POST_RESOURCE || action == Action.UPDATE_RESOURCE
-        ) {
+            if (execute) IBulletin(bulletin).request(subjectId, req);
+            else {
+                if (req.from != address(this)) revert Denied();
+                // todo. need to set aside and lock drop, credit or currency, amount in this contract
+                if (req.currency == address(0xc0d)) {
+                    // todo. members deposit credit to increase credit limit in bulletin.sol
+                } else {}
+            }
+        } else if (action == Action.POST_OR_UPDATE_RESOURCE) {
             (subjectId, res) = abi.decode(
                 payload,
                 (uint256, IBulletin.Resource)
             );
-            if (execute) post(action, subjectId, req, res);
-        } else if (
-            action == Action.APPROVE_RESPONSE ||
-            action == Action.APPROVE_EXCHANGE
-        ) {
-            uint40 duration;
-            (subjectId, tradeId, number, duration) = abi.decode(
+            if (execute) IBulletin(bulletin).resource(subjectId, res);
+            else if (res.from != address(this)) revert Denied();
+        } else if (action == Action.APPROVE_RESPONSE) {
+            (subjectId, tradeId, number) = abi.decode(
                 payload,
-                (uint256, uint256, uint256, uint40)
+                (uint256, uint256, uint256)
             );
-            if (execute) approve(action, subjectId, tradeId, number, duration);
+            if (execute)
+                IBulletin(bulletin).approveTradeToRequest(
+                    subjectId,
+                    tradeId,
+                    number
+                );
+        } else if (action == Action.APPROVE_EXCHANGE) {
+            uint40 duration;
+            (subjectId, tradeId, duration) = abi.decode(
+                payload,
+                (uint256, uint256, uint40)
+            );
+            if (execute)
+                IBulletin(bulletin).approveTradeForResource(
+                    subjectId,
+                    tradeId,
+                    duration
+                );
         } else if (action == Action.TRADE) {
             (tt, subjectId, t) = abi.decode(
                 payload,
                 (IBulletin.TradeType, uint256, IBulletin.Trade)
             );
             if (execute) trade(tt, subjectId, t);
+            // todo. need to set aside and lock drop, credit or currency, amount in this contract
         } else if (
             action == Action.WITHDRAW_REQUEST ||
             action == Action.WITHDRAW_RESOURCE
@@ -318,12 +336,14 @@ contract Collective is ICollective {
                 (IBulletin.TradeType, uint256, uint256)
             );
             if (execute) withdraw(action, tt, subjectId, tradeId);
+            // todo. members need to be able to withdraw spent credit/currency
         } else if (action == Action.CLAIM) {
             (tt, subjectId, tradeId) = abi.decode(
                 payload,
                 (IBulletin.TradeType, uint256, uint256)
             );
             if (execute) claim(tt, subjectId, tradeId);
+            // todo. members need to be able to reap benefits from collective claiming drop or payment for resources
         } else if (action == Action.PAUSE) {
             (subjectId, tradeId) = abi.decode(payload, (uint256, uint256));
             if (execute) pause(subjectId, tradeId);
@@ -401,44 +421,6 @@ contract Collective is ICollective {
             IBulletin(bulletin).activate(user, limit);
         else if (action == Action.ADJUST_CREDIT)
             IBulletin(bulletin).adjust(user, limit);
-        else return;
-    }
-
-    function post(
-        Action action,
-        uint256 id,
-        IBulletin.Request memory req,
-        IBulletin.Resource memory res
-    ) internal {
-        if (action == Action.POST_REQUEST) IBulletin(bulletin).request(0, req);
-        else if (action == Action.UPDATE_REQUEST)
-            IBulletin(bulletin).request(id, req);
-        else if (action == Action.POST_RESOURCE)
-            IBulletin(bulletin).resource(0, res);
-        else if (action == Action.UPDATE_RESOURCE)
-            IBulletin(bulletin).resource(0, res);
-        else return;
-    }
-
-    function approve(
-        Action action,
-        uint256 subjectId,
-        uint256 tradeId,
-        uint256 amount,
-        uint40 duration
-    ) internal {
-        if (action == Action.APPROVE_RESPONSE)
-            IBulletin(bulletin).approveTradeToRequest(
-                subjectId,
-                tradeId,
-                amount
-            );
-        else if (action == Action.APPROVE_EXCHANGE)
-            IBulletin(bulletin).approveTradeForResource(
-                subjectId,
-                tradeId,
-                duration
-            );
         else return;
     }
 

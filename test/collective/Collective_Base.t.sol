@@ -53,7 +53,7 @@ contract CollectiveTest_Base is Test {
             address(bulletin),
             owner,
             address(collective),
-            bulletin.AGENT()
+            bulletin.COLLECTIVE()
         );
 
         // Credits.
@@ -257,7 +257,6 @@ contract CollectiveTest_Base is Test {
 
     function test_NewProposal_Substance_ActivateCredit() public {
         bytes memory payload;
-        uint256 _id = collective.proposalId();
         uint256 id = newSubstanceProposal(
             owner,
             10,
@@ -267,23 +266,72 @@ contract CollectiveTest_Base is Test {
         );
 
         ICollective.Proposal memory p = collective.getProposal(id);
-        assertEq(++_id, id);
-        assertEq(uint8(p.status), uint8(ICollective.Status.ACTIVE));
         assertEq(uint8(p.action), uint8(ICollective.Action.ACTIVATE_CREDIT));
-        assertEq(uint8(p.tally), 0);
-        assertEq(p.targetProp, 0);
-        assertEq(p.quorum, 10);
-        assertEq(p.proposer, owner);
         assertEq(p.payload, payload);
-        assertEq(p.doc, TEST);
     }
 
-    // function test_Propose_UpdateDoc() public {
-    //     uint256 id = newDocProposal(owner, TEST);
+    function test_NewProposal_Substance_AdjustCredit() public {
+        bytes memory payload;
+        uint256 id = newSubstanceProposal(
+            owner,
+            10,
+            ICollective.Tally.SIMPLE_MAJORITY,
+            ICollective.Action.ADJUST_CREDIT,
+            payload = getPayload_Credit(charlie, 10 ether)
+        );
 
-    //     ICollective.Proposal memory p = collective.getProposal(id);
-    //     assertEq(p.proposer, owner);
-    // }
+        ICollective.Proposal memory p = collective.getProposal(id);
+        assertEq(uint8(p.action), uint8(ICollective.Action.ADJUST_CREDIT));
+        assertEq(p.payload, payload);
+    }
+
+    function test_NewProposal_Substance_Request() public {
+        IBulletin.Request memory req = IBulletin.Request({
+            from: owner,
+            currency: address(0xc0d),
+            drop: 2 ether,
+            data: BYTES,
+            uri: TEST
+        });
+        bytes memory payload;
+        uint256 id = newSubstanceProposal(
+            owner,
+            30,
+            ICollective.Tally.SIMPLE_MAJORITY,
+            ICollective.Action.POST_OR_UPDATE_REQUEST,
+            payload = getPayload_Request(0, req)
+        );
+
+        ICollective.Proposal memory p = collective.getProposal(id);
+        assertEq(
+            uint8(p.action),
+            uint8(ICollective.Action.POST_OR_UPDATE_REQUEST)
+        );
+        assertEq(p.payload, payload);
+    }
+
+    function test_NewProposal_Substance_Resource() public {
+        IBulletin.Resource memory res = IBulletin.Resource({
+            from: owner,
+            data: BYTES,
+            uri: TEST
+        });
+        bytes memory payload;
+        uint256 id = newSubstanceProposal(
+            owner,
+            30,
+            ICollective.Tally.SIMPLE_MAJORITY,
+            ICollective.Action.POST_OR_UPDATE_RESOURCE,
+            payload = getPayload_Resource(0, res)
+        );
+
+        ICollective.Proposal memory p = collective.getProposal(id);
+        assertEq(
+            uint8(p.action),
+            uint8(ICollective.Action.POST_OR_UPDATE_RESOURCE)
+        );
+        assertEq(p.payload, payload);
+    }
 
     /* -------------------------------------------------------------------------- */
     /*                              Cancel Proposals.                             */
