@@ -20,6 +20,9 @@ contract Collective is ICollective {
     mapping(uint256 => uint256) public ballotIdsPerProposal;
     mapping(uint256 => mapping(uint256 => Ballot)) public ballots;
 
+    mapping(uint256 => Jar) jars;
+    mapping(uint256 => mapping(address => uint256)) public deposits;
+
     /* -------------------------------------------------------------------------- */
     /*                                Constructor.                                */
     /* -------------------------------------------------------------------------- */
@@ -128,7 +131,7 @@ contract Collective is ICollective {
 
         if (amendment == Amendment.SUBSTANCE) {
             // `Amendment.SUBSTANCE` amendments can process immediately
-            process(true, impProp.action, impProp.payload);
+            process(propId, true, impProp.action, impProp.payload);
             impProp.status = Status.PROCESSED;
         } else if (amendment == Amendment.PROCEDURAL) {
             // `Amendment.PROCEDURAL` amendments require voting on impProp
@@ -203,11 +206,36 @@ contract Collective is ICollective {
             }
 
             if (passProposal(propId, ballotIdsPerProposal[propId], p)) {
-                process(true, p.action, p.payload);
+                process(propId, true, p.action, p.payload);
                 p.status = Status.PROCESSED;
             } else p.status = Status.UNSUCCESSFUL;
         } else return;
     }
+
+    function chipIn(uint256 propId, address currency, uint256 chip) public {
+        Jar storage j = jars[propId];
+        if (currency != j.currency) revert Denied();
+
+        // amount need not exceed goal
+        if (j.funded + chip > j.goal) {
+            chip = j.funded + chip - j.goal;
+        } else chip = chip;
+
+        if (currency == address(0xc0d)) {
+            IBulletin.Credit memory c = Bulletin(bulletin).getCredit(
+                msg.sender
+            );
+            if (chip > c.amount) revert Denied();
+            // todo. adjust credit in bulletin.sol
+            // if (currency == address(0xc0d)) credits[from].amount -= amount;
+        } else
+            Bulletin(bulletin).route(currency, msg.sender, address(this), chip);
+
+        // j.funded += amount;
+        deposits[propId][msg.sender] += chip;
+    }
+
+    // todo. need a function for members to withdraw amount they chipped in
 
     /* -------------------------------------------------------------------------- */
     /*                                  Internal.                                 */
@@ -227,7 +255,7 @@ contract Collective is ICollective {
         if (prop.quorum > 100) revert InvalidQuorum();
 
         // Check proposal payload and throws when payload cannot be decoded.
-        process(false, prop.action, prop.payload);
+        process(propId, false, prop.action, prop.payload);
 
         // Create proposal.
         Proposal storage p;
@@ -256,6 +284,7 @@ contract Collective is ICollective {
     }
 
     function process(
+        uint256 propId,
         bool execute,
         Action action,
         bytes memory payload
@@ -263,31 +292,31 @@ contract Collective is ICollective {
         address addr;
         uint256 subjectId;
         uint256 tradeId;
-        uint256 number;
-        IBulletin.Request memory req;
-        IBulletin.Resource memory res;
-        IBulletin.Trade memory t;
-        IBulletin.TradeType tt;
+        uint256 amount;
 
         if (
             action == Action.ACTIVATE_CREDIT || action == Action.ADJUST_CREDIT
         ) {
-            (addr, number) = abi.decode(payload, (address, uint256));
-            if (execute) credit(action, addr, number);
+            (addr, amount) = abi.decode(payload, (address, uint256));
+            if (execute) credit(action, addr, amount);
         } else if (action == Action.POST_OR_UPDATE_REQUEST) {
+            IBulletin.Request memory req;
             (subjectId, req) = abi.decode(
                 payload,
                 (uint256, IBulletin.Request)
             );
-            if (execute) IBulletin(bulletin).request(subjectId, req);
-            else {
+
+            Jar storage j = jars[propId];
+            if (execute) {
+                if (j.goal != 0) revert Denied();
+                IBulletin(bulletin).request(subjectId, req);
+            } else {
                 if (req.from != address(this)) revert Denied();
-                // todo. need to set aside and lock drop, credit or currency, amount in this contract
-                if (req.currency == address(0xc0d)) {
-                    // todo. members deposit credit to increase credit limit in bulletin.sol
-                } else {}
+                j.currency = req.currency;
+                j.goal = req.drop; // todo. need to consider update instances where req.drop is diff from j.goal, maybe can only increase funding when updating
             }
         } else if (action == Action.POST_OR_UPDATE_RESOURCE) {
+            IBulletin.Resource memory res;
             (subjectId, res) = abi.decode(
                 payload,
                 (uint256, IBulletin.Resource)
@@ -295,7 +324,7 @@ contract Collective is ICollective {
             if (execute) IBulletin(bulletin).resource(subjectId, res);
             else if (res.from != address(this)) revert Denied();
         } else if (action == Action.APPROVE_RESPONSE) {
-            (subjectId, tradeId, number) = abi.decode(
+            (subjectId, tradeId, amount) = abi.decode(
                 payload,
                 (uint256, uint256, uint256)
             );
@@ -303,7 +332,7 @@ contract Collective is ICollective {
                 IBulletin(bulletin).approveTradeToRequest(
                     subjectId,
                     tradeId,
-                    number
+                    amount
                 );
         } else if (action == Action.APPROVE_EXCHANGE) {
             uint40 duration;
@@ -318,6 +347,8 @@ contract Collective is ICollective {
                     duration
                 );
         } else if (action == Action.TRADE) {
+            IBulletin.TradeType tt;
+            IBulletin.Trade memory t;
             (tt, subjectId, t) = abi.decode(
                 payload,
                 (IBulletin.TradeType, uint256, IBulletin.Trade)
@@ -328,9 +359,11 @@ contract Collective is ICollective {
             action == Action.WITHDRAW_REQUEST ||
             action == Action.WITHDRAW_RESOURCE
         ) {
+            IBulletin.TradeType tt;
             subjectId = abi.decode(payload, (uint256));
             if (execute) withdraw(action, tt, subjectId, tradeId);
         } else if (action == Action.WITHDRAW_TRADE) {
+            IBulletin.TradeType tt;
             (tt, subjectId, tradeId) = abi.decode(
                 payload,
                 (IBulletin.TradeType, uint256, uint256)
@@ -338,6 +371,7 @@ contract Collective is ICollective {
             if (execute) withdraw(action, tt, subjectId, tradeId);
             // todo. members need to be able to withdraw spent credit/currency
         } else if (action == Action.CLAIM) {
+            IBulletin.TradeType tt;
             (tt, subjectId, tradeId) = abi.decode(
                 payload,
                 (IBulletin.TradeType, uint256, uint256)
