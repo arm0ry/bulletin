@@ -72,12 +72,6 @@ interface ICollective {
         uint256 amount;
     }
 
-    struct Jar {
-        address currency;
-        uint256 goal;
-        uint256 funded;
-    }
-
     /* -------------------------------------------------------------------------- */
     /*                                   Events.                                  */
     /* -------------------------------------------------------------------------- */
@@ -91,6 +85,7 @@ interface ICollective {
     error ImpNotReady();
     error PropNotReady();
     error InvalidVoter();
+    error NotCollective();
     error InvalidQuorum();
     error LengthMismatch();
     error RolesUndefined();

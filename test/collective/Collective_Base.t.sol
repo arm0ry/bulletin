@@ -107,38 +107,13 @@ contract CollectiveTest_Base is Test {
         Bulletin(payable(_bulletin)).activate(user, amount);
     }
 
-    function newProceduralProposal(
-        address proposer,
-        uint8 quorum,
-        ICollective.Tally tally,
-        string memory doc
-    ) public returns (uint256 id) {
-        bytes memory payload;
-        ICollective.Proposal memory p = ICollective.Proposal({
-            status: ICollective.Status.SPONSORED,
-            action: ICollective.Action.NONE,
-            tally: tally,
-            targetProp: 0,
-            quorum: quorum,
-            proposer: proposer,
-            payload: payload,
-            doc: doc,
-            roles: roles,
-            weights: weights,
-            spots: spots
-        });
-        vm.prank(proposer);
-        collective.propose(0, p);
-
-        return collective.proposalId();
-    }
-
-    function newSubstanceProposal(
+    function postProposal(
         address proposer,
         uint8 quorum,
         ICollective.Tally tally,
         ICollective.Action action,
-        bytes memory payload
+        bytes memory payload,
+        string memory doc
     ) public returns (uint256 id) {
         ICollective.Proposal memory p = ICollective.Proposal({
             status: ICollective.Status.COSIGNED,
@@ -148,7 +123,7 @@ contract CollectiveTest_Base is Test {
             quorum: quorum,
             proposer: proposer,
             payload: payload,
-            doc: TEST,
+            doc: doc,
             roles: roles,
             weights: weights,
             spots: spots
@@ -179,13 +154,19 @@ contract CollectiveTest_Base is Test {
         return abi.encode(id, res);
     }
 
-    function getPayload_ApproveTrade(
+    function getPayload_ApproveTradeToRequest(
         uint256 subjectId,
         uint256 tradeId,
-        uint256 amount,
-        uint40 duration
+        uint256 amount
     ) public pure returns (bytes memory) {
-        return abi.encode(subjectId, tradeId, amount, duration);
+        return abi.encode(subjectId, tradeId, amount);
+    }
+    function getPayload_ApproveTradeForResource(
+        uint256 subjectId,
+        uint256 tradeId,
+        uint256 duration
+    ) public pure returns (bytes memory) {
+        return abi.encode(subjectId, tradeId, duration);
     }
 
     function getPayload_Trade(
@@ -226,13 +207,24 @@ contract CollectiveTest_Base is Test {
     /*                                  Propose.                                  */
     /* -------------------------------------------------------------------------- */
 
-    function test_NewProposal_Procedural(uint8 quorum, uint8 _tally) public {
+    function test_PostProprosal_Doc(
+        uint8 quorum,
+        uint8 _tally,
+        bytes memory payload
+    ) public {
         vm.assume(quorum > 0);
         vm.assume(100 > quorum);
         vm.assume(uint8(type(ICollective.Tally).max) >= _tally);
         ICollective.Tally tally = ICollective.Tally(_tally);
         uint256 _id = collective.proposalId();
-        uint256 id = newProceduralProposal(owner, quorum, tally, TEST);
+        uint256 id = postProposal(
+            owner,
+            quorum,
+            tally,
+            ICollective.Action.NONE,
+            payload,
+            TEST
+        );
 
         ICollective.Proposal memory p = collective.getProposal(id);
         assertEq(++_id, id);
@@ -242,7 +234,7 @@ contract CollectiveTest_Base is Test {
         assertEq(p.targetProp, 0);
         assertEq(p.quorum, quorum);
         assertEq(p.proposer, owner);
-        assertEq(p.payload.length, 0);
+        assertEq(p.payload, payload);
         assertEq(p.doc, TEST);
         assertEq(p.roles[0], roles[0]);
         assertEq(p.roles[1], roles[1]);
@@ -255,14 +247,15 @@ contract CollectiveTest_Base is Test {
         assertEq(p.spots.length, spots.length);
     }
 
-    function test_NewProposal_Substance_ActivateCredit() public {
+    function test_PostProprosal_ActivateCredit() public {
         bytes memory payload;
-        uint256 id = newSubstanceProposal(
+        uint256 id = postProposal(
             owner,
             10,
             ICollective.Tally.SIMPLE_MAJORITY,
             ICollective.Action.ACTIVATE_CREDIT,
-            payload = getPayload_Credit(charlie, 10 ether)
+            payload = getPayload_Credit(charlie, 10 ether),
+            TEST
         );
 
         ICollective.Proposal memory p = collective.getProposal(id);
@@ -270,14 +263,15 @@ contract CollectiveTest_Base is Test {
         assertEq(p.payload, payload);
     }
 
-    function test_NewProposal_Substance_AdjustCredit() public {
+    function test_PostProprosal_AdjustCredit() public {
         bytes memory payload;
-        uint256 id = newSubstanceProposal(
+        uint256 id = postProposal(
             owner,
             10,
             ICollective.Tally.SIMPLE_MAJORITY,
             ICollective.Action.ADJUST_CREDIT,
-            payload = getPayload_Credit(charlie, 10 ether)
+            payload = getPayload_Credit(charlie, 10 ether),
+            TEST
         );
 
         ICollective.Proposal memory p = collective.getProposal(id);
@@ -285,21 +279,22 @@ contract CollectiveTest_Base is Test {
         assertEq(p.payload, payload);
     }
 
-    function test_NewProposal_Substance_Request() public {
+    function test_PostProprosal_Request() public {
         IBulletin.Request memory req = IBulletin.Request({
-            from: owner,
+            from: address(collective),
             currency: address(0xc0d),
             drop: 2 ether,
             data: BYTES,
             uri: TEST
         });
         bytes memory payload;
-        uint256 id = newSubstanceProposal(
+        uint256 id = postProposal(
             owner,
             30,
             ICollective.Tally.SIMPLE_MAJORITY,
             ICollective.Action.POST_OR_UPDATE_REQUEST,
-            payload = getPayload_Request(0, req)
+            payload = getPayload_Request(0, req),
+            TEST
         );
 
         ICollective.Proposal memory p = collective.getProposal(id);
@@ -308,21 +303,34 @@ contract CollectiveTest_Base is Test {
             uint8(ICollective.Action.POST_OR_UPDATE_REQUEST)
         );
         assertEq(p.payload, payload);
+
+        (uint256 subjectId, IBulletin.Request memory _req) = abi.decode(
+            payload,
+            (uint256, IBulletin.Request)
+        );
+
+        assertEq(subjectId, 0);
+        assertEq(req.from, _req.from);
+        assertEq(req.currency, _req.currency);
+        assertEq(req.drop, _req.drop);
+        assertEq(req.uri, _req.uri);
+        assertEq(req.data, _req.data);
     }
 
-    function test_NewProposal_Substance_Resource() public {
+    function test_PostProprosal_Resource() public {
         IBulletin.Resource memory res = IBulletin.Resource({
-            from: owner,
+            from: address(collective),
             data: BYTES,
             uri: TEST
         });
         bytes memory payload;
-        uint256 id = newSubstanceProposal(
+        uint256 id = postProposal(
             owner,
             30,
             ICollective.Tally.SIMPLE_MAJORITY,
             ICollective.Action.POST_OR_UPDATE_RESOURCE,
-            payload = getPayload_Resource(0, res)
+            payload = getPayload_Resource(0, res),
+            TEST
         );
 
         ICollective.Proposal memory p = collective.getProposal(id);
@@ -331,6 +339,132 @@ contract CollectiveTest_Base is Test {
             uint8(ICollective.Action.POST_OR_UPDATE_RESOURCE)
         );
         assertEq(p.payload, payload);
+
+        (uint256 subjectId, IBulletin.Resource memory _res) = abi.decode(
+            payload,
+            (uint256, IBulletin.Resource)
+        );
+
+        assertEq(subjectId, 0);
+        assertEq(res.from, _res.from);
+        assertEq(res.uri, _res.uri);
+        assertEq(res.data, _res.data);
+    }
+
+    function test_PostProprosal_Trade(uint8 tt) public {
+        vm.assume(uint8(type(IBulletin.TradeType).max) >= tt);
+
+        IBulletin.Trade memory trade = IBulletin.Trade({
+            approved: true,
+            paused: true,
+            timestamp: 100,
+            duration: 200,
+            from: address(collective),
+            resource: bytes32(uint256(100)),
+            currency: address(0xc0d), // `address(0xc0d)` reserved for credit
+            amount: 1 ether,
+            content: TEST,
+            data: BYTES //
+        });
+        bytes memory payload;
+        uint256 id = postProposal(
+            owner,
+            30,
+            ICollective.Tally.SIMPLE_MAJORITY,
+            ICollective.Action.TRADE,
+            payload = getPayload_Trade(IBulletin.TradeType(tt), 1, trade),
+            TEST
+        );
+
+        ICollective.Proposal memory p = collective.getProposal(id);
+        assertEq(uint8(p.action), uint8(ICollective.Action.TRADE));
+        assertEq(p.payload, payload);
+
+        (
+            IBulletin.TradeType _tt,
+            uint256 subjectId,
+            IBulletin.Trade memory _trade
+        ) = abi.decode(
+                payload,
+                (IBulletin.TradeType, uint256, IBulletin.Trade)
+            );
+
+        assertEq(subjectId, 1);
+        assertEq(uint8(_tt), uint8(tt));
+        assertEq(trade.approved, _trade.approved);
+        assertEq(trade.paused, _trade.paused);
+        assertEq(trade.timestamp, _trade.timestamp);
+        assertEq(trade.duration, _trade.duration);
+        assertEq(trade.from, _trade.from);
+        assertEq(trade.resource, _trade.resource);
+        assertEq(trade.currency, _trade.currency);
+        assertEq(trade.amount, _trade.amount);
+        assertEq(trade.content, _trade.content);
+        assertEq(trade.data, _trade.data);
+    }
+
+    function test_ApproveTrade_ApproveResponse(
+        uint256 subjectId,
+        uint256 tradeId,
+        uint256 amount
+    ) public {
+        bytes memory payload;
+        uint256 id = postProposal(
+            owner,
+            30,
+            ICollective.Tally.SIMPLE_MAJORITY,
+            ICollective.Action.APPROVE_RESPONSE,
+            payload = getPayload_ApproveTradeToRequest(
+                subjectId,
+                tradeId,
+                amount
+            ),
+            TEST
+        );
+
+        ICollective.Proposal memory p = collective.getProposal(id);
+        assertEq(uint8(p.action), uint8(ICollective.Action.APPROVE_RESPONSE));
+        assertEq(p.payload, payload);
+
+        (uint256 sId, uint256 tId, uint256 _amount) = abi.decode(
+            payload,
+            (uint256, uint256, uint256)
+        );
+        assertEq(sId, subjectId);
+        assertEq(tId, tradeId);
+        assertEq(_amount, amount);
+    }
+
+    function test_ApproveTrade_ApproveExchange(
+        uint256 subjectId,
+        uint256 tradeId,
+        uint40 duration
+    ) public {
+        bytes memory payload;
+        uint256 id = postProposal(
+            owner,
+            30,
+            ICollective.Tally.SIMPLE_MAJORITY,
+            ICollective.Action.APPROVE_EXCHANGE,
+            payload = getPayload_ApproveTradeForResource(
+                subjectId,
+                tradeId,
+                duration
+            ),
+            TEST
+        );
+
+        ICollective.Proposal memory p = collective.getProposal(id);
+        assertEq(uint8(p.action), uint8(ICollective.Action.APPROVE_EXCHANGE));
+        assertEq(p.payload, payload);
+
+        (uint256 sId, uint256 tId, uint256 _duration) = abi.decode(
+            payload,
+            (uint256, uint256, uint256)
+        );
+        assertEq(sId, subjectId);
+        assertEq(tId, tradeId);
+        assertEq(_duration, duration);
     }
 
     /* -------------------------------------------------------------------------- */
