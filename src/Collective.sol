@@ -81,23 +81,19 @@ contract Collective is ICollective {
     function sponsor(uint256 propId) external credited undenounced {
         Proposal storage p = proposals[propId];
         if (p.proposer == msg.sender) revert Denied();
-        if (p.status != Status.ACTIVE) revert PropNotReady();
+        if (p.status != Status.ACTIVE) revert PropInProgress();
 
         // Check role.
+        bool qualified;
         uint256 length = p.roles.length;
         for (uint256 i; i < length; ++i)
-            if (Bulletin(bulletin).hasAnyRole(msg.sender, p.roles[i]))
-                (p.targetProp == 0)
-                    ? p.status = Status.SPONSORED
-                    : p.status = Status.COSIGNED;
-    }
+            if (Bulletin(bulletin).hasAnyRole(msg.sender, p.roles[i])) {
+                qualified = true;
+                if (p.targetProp == 0) p.status = Status.SPONSORED;
+                else p.status = Status.COSIGNED;
+            }
 
-    function cancel(uint256 propId) external {
-        Proposal storage p = proposals[propId];
-        if (p.proposer != msg.sender) revert NotOriginalProposer();
-        if (p.status == Status.ACTIVE || p.status == Status.SPONSORED) {
-            p.status = Status.CANCELLED;
-        } else revert PropNotReady();
+        if (!qualified) revert NotQualified();
     }
 
     // amend prop by requiring proposal proposer and improvement proposer to sign off. Proposers should represent the collective.
@@ -109,7 +105,7 @@ contract Collective is ICollective {
     ) external undenounced {
         Proposal storage prop = proposals[propId];
         if (prop.status != Status.DELIBERATION) revert PropNotReady();
-        if (prop.proposer != msg.sender) revert NotOriginalProposer();
+        if (prop.proposer != msg.sender) revert NotProposer();
 
         Proposal storage impProp = proposals[impPropId];
         if (prop.status != Status.COSIGNED) revert PropNotReady();
@@ -136,13 +132,22 @@ contract Collective is ICollective {
         } else impProp.status = Status.REJECTED;
     }
 
-    // todo. functionally similar to `cancel()`
-    function close(uint256 propId) external credited undenounced {
-        Proposal storage prop = proposals[propId];
-        if (prop.status != Status.DELIBERATION) revert PropNotReady();
-        if (prop.proposer != msg.sender) revert NotOriginalProposer();
-        if (prop.targetProp != 0) revert Denied();
-        prop.status = Status.CLOSED;
+    // Proposal owners may cancel or close proposals
+    function terminate(uint256 propId, bool toCancel, bool toClose) external {
+        Proposal storage p = proposals[propId];
+        if (p.proposer != msg.sender) revert NotProposer();
+
+        if (toCancel) {
+            if (p.status != Status.ACTIVE && p.status != Status.SPONSORED)
+                revert PropNotReady();
+            p.status = Status.CANCELLED;
+        }
+
+        if (toClose) {
+            if (p.status != Status.DELIBERATION) revert PropNotReady();
+            if (p.targetProp != 0) revert Denied();
+            p.status = Status.CLOSED;
+        }
     }
 
     // Voter may vote until proposal is processed.
@@ -177,15 +182,15 @@ contract Collective is ICollective {
 
                     b = ballots[propId][++ballotIdsPerProposal[propId]];
                     b.voter = msg.sender;
-                    b.vote = decision;
+                    b.decision = decision;
                     b.amount = (p.weights[i] == 0)
                         ? 1 ether
                         : amount * p.weights[i];
                 } else {
-                    // Verify original voter.
+                    // Verify  voter.
                     b = ballots[propId][ballotId];
-                    if (b.voter != msg.sender) revert NotOriginalVoter();
-                    b.vote = decision;
+                    if (b.voter != msg.sender) revert NotVoter();
+                    b.decision = decision;
                     b.amount = (p.weights[i] == 0)
                         ? 1 ether
                         : amount * p.weights[i];
@@ -226,7 +231,6 @@ contract Collective is ICollective {
 
         // Check quorum.
         if (prop.quorum > 100) revert InvalidQuorum();
-        console.log(prop.quorum);
         // Check proposal payload and throws when payload cannot be decoded.
         process(false, prop.action, prop.payload);
 
@@ -238,9 +242,11 @@ contract Collective is ICollective {
             p.proposer = msg.sender;
         } else {
             p = proposals[propId];
-            if (p.proposer != msg.sender) revert NotOriginalProposer();
+            if (p.proposer != msg.sender) revert NotProposer();
+
+            // Cannot update when proposals are `Status.SPONSORED`.
+            if (p.status != Status.ACTIVE) revert PropInProgress();
         }
-        if (p.status != Status.ACTIVE) revert PropNotReady();
 
         unchecked {
             // Store vote setting.
@@ -268,11 +274,12 @@ contract Collective is ICollective {
         uint256 tradeId;
         uint256 amount;
 
-        if (
-            action == Action.ACTIVATE_CREDIT || action == Action.ADJUST_CREDIT
-        ) {
+        if (action == Action.ACTIVATE_CREDIT) {
             (addr, amount) = abi.decode(payload, (address, uint256));
-            if (execute) credit(action, addr, amount);
+            if (execute) IBulletin(bulletin).activate(addr, amount);
+        } else if (action == Action.ADJUST_CREDIT) {
+            (addr, amount) = abi.decode(payload, (address, uint256));
+            if (execute) IBulletin(bulletin).adjust(addr, amount);
         } else if (action == Action.POST_OR_UPDATE_REQUEST) {
             IBulletin.Request memory req;
             (subjectId, req) = abi.decode(
@@ -320,32 +327,32 @@ contract Collective is ICollective {
                 payload,
                 (IBulletin.TradeType, uint256, IBulletin.Trade)
             );
-            if (execute) trade(tt, subjectId, t);
+            if (execute) IBulletin(bulletin).trade(tt, subjectId, t);
             else if (t.from != address(this)) revert NotCollective();
-        } else if (
-            action == Action.WITHDRAW_REQUEST ||
-            action == Action.WITHDRAW_RESOURCE
-        ) {
-            IBulletin.TradeType tt;
+        } else if (action == Action.WITHDRAW_REQUEST) {
             subjectId = abi.decode(payload, (uint256));
-            if (execute) withdraw(action, tt, subjectId, tradeId);
+            if (execute) IBulletin(bulletin).withdrawRequest(subjectId);
+        } else if (action == Action.WITHDRAW_RESOURCE) {
+            subjectId = abi.decode(payload, (uint256));
+            if (execute) IBulletin(bulletin).withdrawResource(subjectId);
         } else if (action == Action.WITHDRAW_TRADE) {
             IBulletin.TradeType tt;
             (tt, subjectId, tradeId) = abi.decode(
                 payload,
                 (IBulletin.TradeType, uint256, uint256)
             );
-            if (execute) withdraw(action, tt, subjectId, tradeId);
+            if (execute)
+                IBulletin(bulletin).withdrawTrade(tt, subjectId, tradeId);
         } else if (action == Action.CLAIM) {
             IBulletin.TradeType tt;
             (tt, subjectId, tradeId) = abi.decode(
                 payload,
                 (IBulletin.TradeType, uint256, uint256)
             );
-            if (execute) claim(tt, subjectId, tradeId);
+            if (execute) IBulletin(bulletin).claim(tt, subjectId, tradeId);
         } else if (action == Action.PAUSE) {
             (subjectId, tradeId) = abi.decode(payload, (uint256, uint256));
-            if (execute) pause(subjectId, tradeId);
+            if (execute) IBulletin(bulletin).pause(subjectId, tradeId);
         } else return;
     }
 
@@ -376,10 +383,10 @@ contract Collective is ICollective {
         uint256 propId
     ) internal view returns (bool deliberate) {
         Proposal storage p;
-        // Loops through all proposals for improvement proposals.
+        // Loop through all improvement proposals.
         for (uint256 i; i <= proposalId; ++i) {
             p = proposals[i];
-            if (p.targetProp == propId && p.status == Status.SPONSORED)
+            if (p.targetProp == propId && p.status == Status.COSIGNED)
                 deliberate = true;
         }
     }
@@ -398,10 +405,10 @@ contract Collective is ICollective {
             for (uint256 i; i < numOfBallots; ++i) {
                 b = ballots[propId][i];
                 if (p.tally == Tally.QUADRATIC)
-                    (b.vote)
+                    (b.decision)
                         ? yTotal += FixedPointMathLib.sqrt(b.amount)
                         : nTotal += FixedPointMathLib.sqrt(b.amount);
-                else (b.vote) ? yTotal += b.amount : nTotal += b.amount;
+                else (b.decision) ? yTotal += b.amount : nTotal += b.amount;
             }
 
             // Decide if proposal passes.
@@ -411,51 +418,6 @@ contract Collective is ICollective {
                 if (yTotal > nTotal) passed = true;
             }
         }
-    }
-
-    /// @notice Action-based internal functions.
-
-    function credit(Action action, address user, uint256 limit) internal {
-        if (action == Action.ACTIVATE_CREDIT)
-            IBulletin(bulletin).activate(user, limit);
-        else if (action == Action.ADJUST_CREDIT)
-            IBulletin(bulletin).adjust(user, limit);
-        else return;
-    }
-
-    function trade(
-        IBulletin.TradeType tradeType,
-        uint256 subjectId,
-        IBulletin.Trade memory t
-    ) internal {
-        IBulletin(bulletin).trade(tradeType, subjectId, t);
-    }
-
-    function withdraw(
-        Action action,
-        IBulletin.TradeType tradeType,
-        uint256 subjectId,
-        uint256 tradeId
-    ) internal {
-        if (action == Action.WITHDRAW_REQUEST)
-            IBulletin(bulletin).withdrawRequest(subjectId);
-        else if (action == Action.WITHDRAW_RESOURCE)
-            IBulletin(bulletin).withdrawResource(subjectId);
-        else if (action == Action.WITHDRAW_TRADE)
-            IBulletin(bulletin).withdrawTrade(tradeType, subjectId, tradeId);
-        else return;
-    }
-
-    function claim(
-        IBulletin.TradeType tradeType,
-        uint256 subjectId,
-        uint256 tradeId
-    ) internal {
-        IBulletin(bulletin).claim(tradeType, subjectId, tradeId);
-    }
-
-    function pause(uint256 subjectId, uint256 tradeId) internal {
-        IBulletin(bulletin).pause(subjectId, tradeId);
     }
 
     /* -------------------------------------------------------------------------- */

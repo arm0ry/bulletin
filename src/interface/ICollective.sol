@@ -67,7 +67,7 @@ interface ICollective {
     }
 
     struct Ballot {
-        bool vote;
+        bool decision;
         address voter;
         uint256 amount;
     }
@@ -81,16 +81,21 @@ interface ICollective {
     /* -------------------------------------------------------------------------- */
 
     error Denied();
+    error NotVoter();
     error Denounced();
     error ImpNotReady();
+    error NotProposer();
+    error NotQualified();
     error PropNotReady();
     error InvalidVoter();
     error NotCollective();
     error InvalidQuorum();
+    error PropInProgress();
     error LengthMismatch();
     error RolesUndefined();
-    error NotOriginalVoter();
-    error NotOriginalProposer();
+
+    event CheckNumber(uint256);
+    event CheckBool(bool);
 
     /* -------------------------------------------------------------------------- */
     /*                                 Governance.                                */
@@ -99,7 +104,7 @@ interface ICollective {
     function propose(uint256 propId, Proposal calldata prop) external;
     function raise(uint256 propId, Proposal calldata prop) external;
     function sponsor(uint256 propId) external;
-    function cancel(uint256 propId) external;
+    function terminate(uint256 propId, bool toCancel, bool toClose) external;
     function vote(
         bool vote,
         uint256 propId,

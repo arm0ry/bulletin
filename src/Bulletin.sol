@@ -16,13 +16,11 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
     /*                                   Roles.                                   */
     /* -------------------------------------------------------------------------- */
 
-    // `Agent` assist with activating credit limits and facilitating coordination.
-    // todo. consider adding or updating `AGENT` to `COLLECTIVE` so members may
-    // todo. deposit and trigger credit adjustment by collective.sol itself
-    uint8 public constant COLLECTIVE = 1 << 0;
+    // Role for `Collective.sol`.
+    uint48 public constant COLLECTIVE = 1 << 0;
 
-    // `Denounced` has restricted access to Bulltin.
-    uint8 public constant DENOUNCED = 1 << 1;
+    // Role for the denounced with restricted access.
+    uint48 public constant DENOUNCED = 1 << 1;
 
     /* -------------------------------------------------------------------------- */
     /*                                  Storage.                                  */
@@ -470,7 +468,6 @@ contract Bulletin is OwnableRoles, IBulletin, BERC6909 {
 
     /// @notice Access resource only
     function access(uint256 subjectId, uint256 tradeId) external {
-        console.log(block.timestamp);
         uint256 id = encodeTokenId(
             address(this),
             TradeType.EXCHANGE,
