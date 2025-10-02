@@ -44,9 +44,9 @@ contract CollectiveTest_Propose is Test, CollectiveTest_Base {
         assertEq(p.weights[0], weights[0]);
         assertEq(p.weights[1], weights[1]);
         assertEq(p.weights.length, weights.length);
-        assertEq(p.spots[0], spots[0]);
-        assertEq(p.spots[1], spots[1]);
-        assertEq(p.spots.length, spots.length);
+        assertEq(p.spotsCap[0], spotsCap[0]);
+        assertEq(p.spotsCap[1], spotsCap[1]);
+        assertEq(p.spotsCap.length, spotsCap.length);
     }
 
     function test_PostProprosal_ActivateCredit(

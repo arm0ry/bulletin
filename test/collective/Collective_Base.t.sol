@@ -34,7 +34,7 @@ contract CollectiveTest_Base is Test {
     uint256 RELATIONS = 1 << 7;
     uint256[] roles = new uint256[](2);
     uint256[] weights = new uint256[](2);
-    uint256[] spots = new uint256[](2);
+    uint256[] spotsCap = new uint256[](2);
 
     /// -----------------------------------------------------------------------
     /// Setup Tests
@@ -54,17 +54,18 @@ contract CollectiveTest_Base is Test {
         );
 
         // Credits.
+        activate(address(bulletin), owner, address(collective), 10 ether);
         activate(address(bulletin), owner, owner, 10 ether);
         activate(address(bulletin), owner, alice, 10 ether);
         activate(address(bulletin), owner, bob, 10 ether);
 
-        // Proposal roles, weights, and spots.
+        // Proposal roles, weights, and spotsCap.
         roles[0] = ARTISTS;
         roles[1] = OPERATIONS;
         weights[0] = 3;
         weights[1] = 5;
-        spots[0] = 2;
-        spots[1] = 3;
+        spotsCap[0] = 1;
+        spotsCap[1] = 1;
     }
 
     function testReceiveETH() public payable {
@@ -125,7 +126,8 @@ contract CollectiveTest_Base is Test {
             doc: doc,
             roles: roles,
             weights: weights,
-            spots: spots
+            spotsUsed: spotsCap,
+            spotsCap: spotsCap
         });
         vm.prank(proposer);
         collective.propose(0, p);

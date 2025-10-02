@@ -156,19 +156,25 @@ contract Collective is ICollective {
         bool decision,
         uint256 propId,
         uint256 role,
-        uint256 amount
+        uint256 size
     ) external undenounced {
+        if (!Bulletin(bulletin).hasAnyRole(msg.sender, role))
+            revert NotQualified();
+
         Ballot storage b;
         Proposal storage p = proposals[propId];
-        if (p.status != Status.SPONSORED && p.status != Status.APPROVED)
-            revert PropNotReady();
+        if (
+            p.status != Status.SPONSORED &&
+            p.status != Status.APPROVED &&
+            p.status != Status.VOTED
+        ) revert PropNotReady();
 
         // Insufficient `Bulletin.Credit.limit`.
         IBulletin.Credit memory c = IBulletin(bulletin).getCredit(msg.sender);
         if (c.limit == 0) revert Denied();
 
         // Cap number of votes by voters' at credit limit.
-        (amount > c.limit) ? amount = c.limit : amount;
+        (size > c.limit) ? size = c.limit : size;
 
         // If voter role is qualified to vote on proposal, add/update ballot.
         bool isQualified;
@@ -178,41 +184,46 @@ contract Collective is ICollective {
             if (role == p.roles[i]) {
                 isQualified = true;
                 if (ballotId == 0) {
-                    --p.spots[i];
-
                     b = ballots[propId][++ballotIdsPerProposal[propId]];
                     b.voter = msg.sender;
                     b.decision = decision;
-                    b.amount = (p.weights[i] == 0)
+                    b.size = (p.weights[i] == 0)
                         ? 1 ether
-                        : amount * p.weights[i];
+                        : size * p.weights[i];
+
+                    --p.spotsUsed[i];
+
+                    // Check quorum.
+                    if (atQuorum(ballotIdsPerProposal[propId], p)) {
+                        // if improvement prop exists and sponsored, prop moves to deliberation
+                        // otherwise, count votes to execute prop
+                        if (p.targetProp == 0 && toDeliberate(propId)) {
+                            p.status = Status.DELIBERATION;
+                            return;
+                        }
+
+                        if (
+                            passProposal(
+                                propId,
+                                ballotIdsPerProposal[propId],
+                                p
+                            )
+                        ) {
+                            process(true, p.action, p.payload);
+                            p.status = Status.PROCESSED;
+                        } else p.status = Status.NOT_PASSED;
+                    } else p.status = Status.VOTED;
                 } else {
                     // Verify  voter.
                     b = ballots[propId][ballotId];
-                    if (b.voter != msg.sender) revert NotVoter();
                     b.decision = decision;
-                    b.amount = (p.weights[i] == 0)
+                    b.size = (p.weights[i] == 0)
                         ? 1 ether
-                        : amount * p.weights[i];
+                        : size * p.weights[i];
                 }
             }
         }
         if (!isQualified) revert InvalidVoter();
-
-        // Check quorum.
-        if (atQuorum(ballotIdsPerProposal[propId], p)) {
-            // if improvement prop exists and sponsored, prop moves to deliberation
-            // otherwise, count votes to execute prop
-            if (p.targetProp == 0 && toDeliberate(propId)) {
-                p.status = Status.DELIBERATION;
-                return;
-            }
-
-            if (passProposal(propId, ballotIdsPerProposal[propId], p)) {
-                process(true, p.action, p.payload);
-                p.status = Status.PROCESSED;
-            } else p.status = Status.UNSUCCESSFUL;
-        } else return;
     }
 
     /* -------------------------------------------------------------------------- */
@@ -227,7 +238,8 @@ contract Collective is ICollective {
         // Check array parity.
         if (prop.roles.length == 0) revert RolesUndefined();
         if (prop.roles.length != prop.weights.length) revert LengthMismatch();
-        if (prop.weights.length != prop.spots.length) revert LengthMismatch();
+        if (prop.weights.length != prop.spotsCap.length)
+            revert LengthMismatch();
 
         // Check quorum.
         if (prop.quorum > 100) revert InvalidQuorum();
@@ -255,7 +267,8 @@ contract Collective is ICollective {
             p.quorum = prop.quorum;
             p.roles = prop.roles;
             p.weights = prop.weights;
-            p.spots = prop.spots;
+            p.spotsUsed = prop.spotsUsed;
+            p.spotsCap = prop.spotsCap;
 
             // Store proposed action.
             p.action = prop.action;
@@ -374,8 +387,10 @@ contract Collective is ICollective {
         Proposal storage p
     ) internal view returns (bool) {
         uint256 totalBallots;
-        uint256 length = p.spots.length;
-        for (uint256 i; i < length; ++i) totalBallots += p.spots[i];
+        uint256 length = p.spotsCap.length;
+        for (uint256 i; i < length; ++i) {
+            totalBallots += p.spotsCap[i];
+        }
         return ((numOfBallots * 100) / totalBallots >= p.quorum);
     }
 
@@ -402,15 +417,19 @@ contract Collective is ICollective {
 
         unchecked {
             // Count votes.
-            for (uint256 i; i < numOfBallots; ++i) {
+            for (uint256 i = 1; i <= numOfBallots; ++i) {
                 b = ballots[propId][i];
+                console.log("voter's votes", b.size);
+
                 if (p.tally == Tally.QUADRATIC)
                     (b.decision)
-                        ? yTotal += FixedPointMathLib.sqrt(b.amount)
-                        : nTotal += FixedPointMathLib.sqrt(b.amount);
-                else (b.decision) ? yTotal += b.amount : nTotal += b.amount;
+                        ? yTotal += FixedPointMathLib.sqrt(b.size)
+                        : nTotal += FixedPointMathLib.sqrt(b.size);
+                else (b.decision) ? yTotal += b.size : nTotal += b.size;
             }
 
+            console.log("yes total", yTotal);
+            console.log("no total", nTotal);
             // Decide if proposal passes.
             if (p.tally == Tally.SUPERMAJORITY) {
                 if (yTotal > (2 * (yTotal + nTotal)) / 3) passed = true;

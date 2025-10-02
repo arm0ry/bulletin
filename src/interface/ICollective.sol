@@ -8,12 +8,13 @@ interface ICollective {
     enum Status {
         ACTIVE,
         SPONSORED,
-        DELIBERATION,
         COSIGNED,
+        VOTED,
+        DELIBERATION,
         APPROVED,
         REJECTED,
         PROCESSED,
-        UNSUCCESSFUL,
+        NOT_PASSED,
         CANCELLED,
         CLOSED
     }
@@ -63,13 +64,14 @@ interface ICollective {
         // voters
         uint256[] roles;
         uint256[] weights; // unsigned integer, 0 decimal
-        uint256[] spots; // unsigned integer, 0 decimal
+        uint256[] spotsUsed; // unsigned integer, 0 decimal
+        uint256[] spotsCap; // unsigned integer, 0 decimal
     }
 
     struct Ballot {
         bool decision;
         address voter;
-        uint256 amount;
+        uint256 size;
     }
 
     /* -------------------------------------------------------------------------- */
@@ -81,7 +83,6 @@ interface ICollective {
     /* -------------------------------------------------------------------------- */
 
     error Denied();
-    error NotVoter();
     error Denounced();
     error ImpNotReady();
     error NotProposer();
