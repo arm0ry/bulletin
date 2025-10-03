@@ -56,8 +56,8 @@ interface ICollective {
         Status status;
         Action action;
         Tally tally;
-        uint8 targetProp; // reserved for improvement proposals
         uint8 quorum;
+        uint40 targetProp; // reserved for improvement proposals
         address proposer;
         bytes payload;
         string doc;
@@ -94,6 +94,7 @@ interface ICollective {
     error PropInProgress();
     error LengthMismatch();
     error RolesUndefined();
+    error VoterRoleMismatch();
 
     event CheckNumber(uint256);
     event CheckBool(bool);

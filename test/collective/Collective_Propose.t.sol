@@ -424,4 +424,35 @@ contract CollectiveTest_Propose is Test, CollectiveTest_Base {
         assertEq(subjectId, _subjectId);
         assertEq(tradeId, _tradeId);
     }
+
+    function testRevert_PostImprovementProprosal_PropNotReady() public {
+        bytes memory payload;
+        uint256 id = postProposal(
+            owner,
+            10,
+            ICollective.Tally.SIMPLE_MAJORITY,
+            ICollective.Action.NONE,
+            payload,
+            TEST
+        );
+
+        ICollective.Proposal memory p = ICollective.Proposal({
+            status: ICollective.Status.COSIGNED,
+            action: ICollective.Action.NONE,
+            tally: ICollective.Tally.SIMPLE_MAJORITY,
+            quorum: 20,
+            targetProp: uint40(id),
+            proposer: address(0),
+            payload: payload,
+            doc: TEST,
+            roles: roles,
+            weights: weights,
+            spotsUsed: spotsCap,
+            spotsCap: spotsCap
+        });
+
+        vm.expectRevert(ICollective.PropNotReady.selector);
+        vm.prank(owner);
+        collective.raise(0, p);
+    }
 }

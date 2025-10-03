@@ -69,7 +69,8 @@ contract Collective is ICollective {
         Proposal calldata prop
     ) external credited undenounced {
         Proposal storage p = proposals[prop.targetProp];
-        if (p.status != Status.SPONSORED) revert PropNotReady();
+        if (p.status != Status.SPONSORED && p.status != Status.VOTED)
+            revert PropNotReady();
 
         _propose(true, propId, prop);
     }
@@ -159,7 +160,7 @@ contract Collective is ICollective {
         uint256 size
     ) external undenounced {
         if (!Bulletin(bulletin).hasAnyRole(msg.sender, role))
-            revert NotQualified();
+            revert VoterRoleMismatch();
 
         Ballot storage b;
         Proposal storage p = proposals[propId];
@@ -183,6 +184,8 @@ contract Collective is ICollective {
         for (uint256 i; i < length; ++i) {
             if (role == p.roles[i]) {
                 isQualified = true;
+
+                // Update and store ballot.
                 if (ballotId == 0) {
                     b = ballots[propId][++ballotIdsPerProposal[propId]];
                     b.voter = msg.sender;
@@ -192,27 +195,6 @@ contract Collective is ICollective {
                         : size * p.weights[i];
 
                     --p.spotsUsed[i];
-
-                    // Check quorum.
-                    if (atQuorum(ballotIdsPerProposal[propId], p)) {
-                        // if improvement prop exists and sponsored, prop moves to deliberation
-                        // otherwise, count votes to execute prop
-                        if (p.targetProp == 0 && toDeliberate(propId)) {
-                            p.status = Status.DELIBERATION;
-                            return;
-                        }
-
-                        if (
-                            passProposal(
-                                propId,
-                                ballotIdsPerProposal[propId],
-                                p
-                            )
-                        ) {
-                            process(true, p.action, p.payload);
-                            p.status = Status.PROCESSED;
-                        } else p.status = Status.NOT_PASSED;
-                    } else p.status = Status.VOTED;
                 } else {
                     // Verify  voter.
                     b = ballots[propId][ballotId];
@@ -221,6 +203,21 @@ contract Collective is ICollective {
                         ? 1 ether
                         : size * p.weights[i];
                 }
+
+                // Check quorum.
+                if (atQuorum(ballotIdsPerProposal[propId], p)) {
+                    // if improvement prop exists and sponsored, move proposal to deliberation
+                    // otherwise, count votes to execute prop
+                    if (p.targetProp == 0 && toDeliberate(propId)) {
+                        p.status = Status.DELIBERATION;
+                        return;
+                    }
+
+                    if (passProposal(propId, ballotIdsPerProposal[propId], p)) {
+                        process(true, p.action, p.payload);
+                        p.status = Status.PROCESSED;
+                    } else p.status = Status.NOT_PASSED;
+                } else p.status = Status.VOTED;
             }
         }
         if (!isQualified) revert InvalidVoter();

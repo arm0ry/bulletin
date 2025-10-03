@@ -135,6 +135,35 @@ contract CollectiveTest_Base is Test {
         return collective.proposalId();
     }
 
+    function postImpProposal(
+        uint40 targetProp,
+        address proposer,
+        uint8 quorum,
+        ICollective.Tally tally,
+        ICollective.Action action,
+        bytes memory payload,
+        string memory doc
+    ) public returns (uint256 id) {
+        ICollective.Proposal memory p = ICollective.Proposal({
+            status: ICollective.Status.COSIGNED,
+            action: action,
+            tally: tally,
+            quorum: quorum,
+            targetProp: targetProp,
+            proposer: proposer,
+            payload: payload,
+            doc: doc,
+            roles: roles,
+            weights: weights,
+            spotsUsed: spotsCap,
+            spotsCap: spotsCap
+        });
+        vm.prank(proposer);
+        collective.raise(0, p);
+
+        return collective.proposalId();
+    }
+
     function getPayload_Credit(
         address user,
         uint256 amount
