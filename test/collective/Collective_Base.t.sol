@@ -97,6 +97,22 @@ contract CollectiveTest_Base is Test {
         return Bulletin(payable(_bulletin)).rolesOf(user);
     }
 
+    function sponsor(address user, uint256 propId) public {
+        vm.prank(user);
+        collective.sponsor(propId);
+    }
+
+    function vote(
+        address voter,
+        bool decision,
+        uint256 propId,
+        uint256 role,
+        uint256 votes
+    ) public {
+        vm.prank(voter);
+        collective.vote(decision, propId, role, votes);
+    }
+
     function activate(
         address _bulletin,
         address _owner,
@@ -235,24 +251,4 @@ contract CollectiveTest_Base is Test {
     ) public pure returns (bytes memory) {
         return abi.encode(subjectId, tradeId);
     }
-
-    /* -------------------------------------------------------------------------- */
-    /*                              Cancel Proposals.                             */
-    /* -------------------------------------------------------------------------- */
-
-    /* -------------------------------------------------------------------------- */
-    /*                                  Sponsor.                                  */
-    /* -------------------------------------------------------------------------- */
-
-    /* -------------------------------------------------------------------------- */
-    /*                                    Vote.                                   */
-    /* -------------------------------------------------------------------------- */
-
-    /* -------------------------------------------------------------------------- */
-    /*                                Improvements.                               */
-    /* -------------------------------------------------------------------------- */
-
-    /* -------------------------------------------------------------------------- */
-    /*                                  Process.                                  */
-    /* -------------------------------------------------------------------------- */
 }

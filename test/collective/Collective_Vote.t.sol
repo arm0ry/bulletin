@@ -46,6 +46,12 @@ contract CollectiveTest_Vote is Test, CollectiveTest_Base {
         vm.prank(bob);
         collective.vote(decision, id, ARTISTS, votes);
 
+        uint256 ballotId = collective.ballotIdsPerProposal(id);
+        ICollective.Ballot memory b = collective.getBallot(id, ballotId);
+        assertEq(b.decision, decision);
+        assertEq(b.voter, bob);
+        assertEq(b.size, votes * weights[0]);
+
         p = collective.getProposal(id);
         assertEq(uint8(p.status), uint8(ICollective.Status.VOTED));
         assertEq(p.spotsUsed[0], artistsSpotsUsed - 1);
@@ -56,112 +62,20 @@ contract CollectiveTest_Vote is Test, CollectiveTest_Base {
         p = collective.getProposal(id);
         assertEq(uint8(p.status), uint8(ICollective.Status.VOTED));
         assertEq(p.spotsUsed[1], operationsSpotsUsed - 1);
-    }
 
-    function test_Vote_Status_Processed_ActionBasedProp(uint256 votes) public {
-        vm.assume(5 ether > votes);
-        vm.assume(votes > 0);
-
-        bool decision = true;
-        roles[0] = ARTISTS;
-        roles[1] = OPERATIONS;
-        spotsCap[0] = 1;
-        spotsCap[1] = 1;
-
-        bytes memory payload;
-        IBulletin.Request memory req = IBulletin.Request({
-            from: address(collective),
-            currency: address(0xc0d),
-            drop: votes,
-            data: BYTES,
-            uri: TEST
-        });
-        uint256 id = postProposal(
-            owner,
-            51,
-            ICollective.Tally.QUADRATIC,
-            ICollective.Action.POST_OR_UPDATE_REQUEST,
-            payload = getPayload_Request(0, req),
-            TEST
-        );
-
-        // grant roles
-        grantRole(address(bulletin), owner, bob, ARTISTS);
-        grantRole(address(bulletin), owner, alice, OPERATIONS);
-
-        // sponsor
-        vm.prank(bob);
-        collective.sponsor(id);
-        ICollective.Proposal memory p = collective.getProposal(id);
-
-        // voting by two members
-        vm.prank(bob);
-        collective.vote(decision, id, ARTISTS, votes);
-
-        p = collective.getProposal(id);
-        assertEq(uint8(p.status), uint8(ICollective.Status.VOTED));
-
-        vm.prank(alice);
-        collective.vote(decision, id, OPERATIONS, votes);
-
-        p = collective.getProposal(id);
-        assertEq(uint8(p.status), uint8(ICollective.Status.PROCESSED));
-
-        // check Bulletin.sol for posting
-        IBulletin.Request memory _request = bulletin.getRequest(1);
-        assertEq(_request.from, address(collective));
-        assertEq(_request.currency, address(0xc0d));
-        assertEq(_request.drop, votes);
-        assertEq(_request.data, BYTES);
-        assertEq(_request.uri, TEST);
-
-        IBulletin.Credit memory credit = bulletin.getCredit(
-            address(collective)
-        );
-        assertEq(credit.amount, 10 ether - votes);
-    }
-
-    function test_Vote_Status_Processed_ActionlessBasedProp(
-        uint256 votes
-    ) public {
-        vm.assume(20 ether > votes);
-        vm.assume(votes > 0);
-
-        bool decision = true;
-        roles[0] = ARTISTS;
-        roles[1] = OPERATIONS;
-        spotsCap[0] = 1;
-        spotsCap[1] = 1;
-        uint256 artistsSpotsUsed = spotsCap[0];
-
-        bytes memory payload;
-        uint256 id = postProposal(
-            owner,
-            50,
-            ICollective.Tally.QUADRATIC,
-            ICollective.Action.NONE,
-            payload,
-            TEST
-        );
-
-        grantRole(address(bulletin), owner, bob, ARTISTS);
-
-        vm.prank(bob);
-        collective.sponsor(id);
-        ICollective.Proposal memory p = collective.getProposal(id);
-
-        vm.prank(bob);
-        collective.vote(decision, id, ARTISTS, votes);
-
-        p = collective.getProposal(id);
-        assertEq(uint8(p.status), uint8(ICollective.Status.PROCESSED));
-        assertEq(p.spotsUsed[0], artistsSpotsUsed - 1);
+        ballotId = collective.ballotIdsPerProposal(id);
+        b = collective.getBallot(id, ballotId);
+        assertEq(b.decision, decision);
+        assertEq(b.voter, alice);
+        assertEq(b.size, votes * weights[1]);
     }
 
     function test_Vote_Status_NotPassed(
+        bool decision,
         uint256 firstVotes,
         uint256 secondVotes
     ) public {
+        decision = true;
         vm.assume(5 ether > firstVotes);
 
         roles[0] = ARTISTS;
@@ -189,15 +103,28 @@ contract CollectiveTest_Vote is Test, CollectiveTest_Base {
         ICollective.Proposal memory p = collective.getProposal(id);
 
         vm.prank(bob);
-        collective.vote(true, id, ARTISTS, firstVotes);
+        collective.vote(decision, id, ARTISTS, firstVotes);
+
+        uint256 ballotId = collective.ballotIdsPerProposal(id);
+        ICollective.Ballot memory b = collective.getBallot(id, ballotId);
+        assertEq(b.decision, decision);
+        assertEq(b.voter, bob);
+        assertEq(b.size, firstVotes * weights[0]);
 
         p = collective.getProposal(id);
         assertEq(uint8(p.status), uint8(ICollective.Status.VOTED));
         assertEq(p.spotsUsed[0], artistsSpotsUsed - 1);
 
-        vm.assume(secondVotes > 10 ether);
+        vm.assume(10 ether > secondVotes);
+        vm.assume(secondVotes > firstVotes);
         vm.prank(alice);
-        collective.vote(false, id, OPERATIONS, secondVotes);
+        collective.vote(!decision, id, OPERATIONS, secondVotes);
+
+        ballotId = collective.ballotIdsPerProposal(id);
+        b = collective.getBallot(id, ballotId);
+        assertEq(b.decision, !decision);
+        assertEq(b.voter, alice);
+        assertEq(b.size, secondVotes * weights[1]);
 
         p = collective.getProposal(id);
         assertEq(uint8(p.status), uint8(ICollective.Status.NOT_PASSED));
@@ -259,7 +186,7 @@ contract CollectiveTest_Vote is Test, CollectiveTest_Base {
         ICollective.Proposal memory impP = collective.getProposal(impId);
         assertEq(uint8(impP.status), uint8(ICollective.Status.COSIGNED));
 
-        // alice votes again
+        // alice votes
         vm.prank(alice);
         collective.vote(decision, id, OPERATIONS, secondVotes);
 
@@ -297,6 +224,12 @@ contract CollectiveTest_Vote is Test, CollectiveTest_Base {
         vm.prank(bob);
         collective.vote(decision, id, ARTISTS, votes);
 
+        uint256 bobBallotId = collective.ballotIdsPerProposal(id);
+        ICollective.Ballot memory b = collective.getBallot(id, bobBallotId);
+        assertEq(b.decision, decision);
+        assertEq(b.voter, bob);
+        assertEq(b.size, votes * weights[0]);
+
         p = collective.getProposal(id);
         assertEq(uint8(p.status), uint8(ICollective.Status.VOTED));
         assertEq(p.spotsUsed[0], artistsSpotsUsed -= 1);
@@ -305,18 +238,286 @@ contract CollectiveTest_Vote is Test, CollectiveTest_Base {
         vm.prank(alice);
         collective.vote(decision, id, ARTISTS, votes);
 
+        uint256 aliceBallotId = collective.ballotIdsPerProposal(id);
+        b = collective.getBallot(id, aliceBallotId);
+        assertEq(b.decision, decision);
+        assertEq(b.voter, alice);
+        assertEq(b.size, votes * weights[0]);
+
         p = collective.getProposal(id);
         assertEq(uint8(p.status), uint8(ICollective.Status.VOTED));
         assertEq(p.spotsUsed[0], artistsSpotsUsed -= 1);
 
         // Bob updates previous vote before quorum is reached.
         vm.prank(bob);
-        collective.vote(!decision, id, ARTISTS, votes);
+        collective.vote(!decision, id, ARTISTS, votes / 2);
+
+        b = collective.getBallot(id, bobBallotId);
+        assertEq(b.decision, !decision);
+        assertEq(b.voter, bob);
+        assertEq(b.size, (votes / 2) * weights[0]);
 
         p = collective.getProposal(id);
         assertEq(uint8(p.status), uint8(ICollective.Status.VOTED));
         assertEq(p.spotsUsed[0], artistsSpotsUsed);
     }
+
+    /* -------------------------------------------------------------------------- */
+    /*                                 Processed.                                 */
+    /* -------------------------------------------------------------------------- */
+
+    function test_Vote_Status_Processed_ActivateCredit(uint256 votes) public {
+        vm.assume(5 ether > votes);
+        vm.assume(votes > 0);
+
+        bool decision = true;
+        uint256 id = postProposal(
+            owner,
+            51,
+            ICollective.Tally.QUADRATIC,
+            ICollective.Action.ACTIVATE_CREDIT,
+            getPayload_Credit(charlie, 20 ether),
+            TEST
+        );
+
+        // grant roles
+        grantRole(address(bulletin), owner, bob, ARTISTS);
+        grantRole(address(bulletin), owner, alice, OPERATIONS);
+
+        // sponsor
+        sponsor(bob, id);
+
+        // voting by two members
+        vote(bob, decision, id, ARTISTS, votes);
+        vote(alice, decision, id, OPERATIONS, votes);
+
+        // check proposal status
+        ICollective.Proposal memory p = collective.getProposal(id);
+        assertEq(uint8(p.status), uint8(ICollective.Status.PROCESSED));
+
+        // check Bulletin.sol for posting
+        IBulletin.Credit memory credit = bulletin.getCredit(charlie);
+        assertEq(credit.limit, 20 ether);
+        assertEq(credit.amount, 20 ether);
+    }
+
+    function test_Vote_Status_Processed_AdjustCredit(uint256 votes) public {
+        vm.assume(5 ether > votes);
+        vm.assume(votes > 0);
+
+        bool decision = true;
+        uint256 id = postProposal(
+            owner,
+            51,
+            ICollective.Tally.QUADRATIC,
+            ICollective.Action.ADJUST_CREDIT,
+            getPayload_Credit(alice, 5 ether),
+            TEST
+        );
+
+        // grant roles
+        grantRole(address(bulletin), owner, bob, ARTISTS);
+        grantRole(address(bulletin), owner, alice, OPERATIONS);
+
+        // sponsor
+        sponsor(bob, id);
+
+        // voting by two members
+        vote(bob, decision, id, ARTISTS, votes);
+        vote(alice, decision, id, OPERATIONS, votes);
+
+        // check proposal status
+        ICollective.Proposal memory p = collective.getProposal(id);
+        assertEq(uint8(p.status), uint8(ICollective.Status.PROCESSED));
+
+        // check Bulletin.sol for posting
+        IBulletin.Credit memory credit = bulletin.getCredit(alice);
+        assertEq(credit.limit, 5 ether);
+        assertEq(credit.amount, 5 ether);
+    }
+
+    function test_Vote_Status_Processed_PostRequest(uint256 votes) public {
+        vm.assume(5 ether > votes);
+        vm.assume(votes > 0);
+
+        bool decision = true;
+        IBulletin.Request memory req = IBulletin.Request({
+            from: address(collective),
+            currency: address(0xc0d),
+            drop: votes,
+            data: BYTES,
+            uri: TEST
+        });
+        uint256 id = postProposal(
+            owner,
+            51,
+            ICollective.Tally.QUADRATIC,
+            ICollective.Action.POST_OR_UPDATE_REQUEST,
+            getPayload_Request(0, req),
+            TEST
+        );
+
+        // grant roles
+        grantRole(address(bulletin), owner, bob, ARTISTS);
+        grantRole(address(bulletin), owner, alice, OPERATIONS);
+
+        // sponsor
+        sponsor(bob, id);
+
+        // voting by two members
+        vote(bob, decision, id, ARTISTS, votes);
+        vote(alice, decision, id, OPERATIONS, votes);
+
+        // check proposal status
+        ICollective.Proposal memory p = collective.getProposal(id);
+        assertEq(uint8(p.status), uint8(ICollective.Status.PROCESSED));
+
+        // check Bulletin.sol for posting
+        IBulletin.Request memory _request = bulletin.getRequest(1);
+        assertEq(_request.from, req.from);
+        assertEq(_request.currency, req.currency);
+        assertEq(_request.drop, req.drop);
+        assertEq(_request.data, req.data);
+        assertEq(_request.uri, req.uri);
+
+        IBulletin.Credit memory credit = bulletin.getCredit(
+            address(collective)
+        );
+        assertEq(credit.amount, 10 ether - votes);
+    }
+
+    function test_Vote_Status_Processed_PostResource(uint256 votes) public {
+        vm.assume(5 ether > votes);
+        vm.assume(votes > 0);
+
+        bool decision = true;
+        IBulletin.Resource memory res = IBulletin.Resource({
+            from: address(collective),
+            data: BYTES,
+            uri: TEST
+        });
+        uint256 id = postProposal(
+            owner,
+            51,
+            ICollective.Tally.QUADRATIC,
+            ICollective.Action.POST_OR_UPDATE_RESOURCE,
+            getPayload_Resource(0, res),
+            TEST
+        );
+
+        // grant roles
+        grantRole(address(bulletin), owner, bob, ARTISTS);
+        grantRole(address(bulletin), owner, alice, OPERATIONS);
+
+        // sponsor
+        sponsor(bob, id);
+
+        // voting by two members
+        vote(bob, decision, id, ARTISTS, votes);
+        vote(alice, decision, id, OPERATIONS, votes);
+
+        // check proposal status
+        ICollective.Proposal memory p = collective.getProposal(id);
+        assertEq(uint8(p.status), uint8(ICollective.Status.PROCESSED));
+
+        // check Bulletin.sol for posting
+        IBulletin.Resource memory _resource = bulletin.getResource(1);
+        assertEq(_resource.from, address(collective));
+        assertEq(_resource.data, BYTES);
+        assertEq(_resource.uri, TEST);
+    }
+    function test_Vote_Status_Processed_ApproveResponse(uint256 votes) public {
+        vm.assume(5 ether > votes);
+        vm.assume(votes > 0);
+
+        bool decision = true;
+        IBulletin.Request memory req = IBulletin.Request({
+            from: address(collective),
+            currency: address(0xc0d),
+            drop: votes,
+            data: BYTES,
+            uri: TEST
+        });
+        uint256 id = postProposal(
+            owner,
+            51,
+            ICollective.Tally.QUADRATIC,
+            ICollective.Action.POST_OR_UPDATE_REQUEST,
+            getPayload_Request(0, req),
+            TEST
+        );
+
+        // grant roles
+        grantRole(address(bulletin), owner, bob, ARTISTS);
+        grantRole(address(bulletin), owner, alice, OPERATIONS);
+
+        // sponsor
+        sponsor(bob, id);
+
+        // voting by two members
+        vote(bob, decision, id, ARTISTS, votes);
+        vote(alice, decision, id, OPERATIONS, votes);
+
+        // todo. user responds to request
+
+        // todo. collective approves response
+        uint256 id = postProposal(
+            owner,
+            51,
+            ICollective.Tally.QUADRATIC,
+            ICollective.Action.POST_OR_UPDATE_REQUEST,
+            getPayload_Request(0, req),
+            TEST
+        );
+    }
+    function test_Vote_Status_Processed_ApproveExchange(uint256 votes) public {}
+    function test_Vote_Status_Processed_Trade(uint256 votes) public {}
+    function test_Vote_Status_Processed_WithdrawRequest(uint256 votes) public {}
+    function test_Vote_Status_Processed_WithdrawResource(
+        uint256 votes
+    ) public {}
+    function test_Vote_Status_Processed_WithdrawTrade(uint256 votes) public {}
+    function test_Vote_Status_Processed_Claim(uint256 votes) public {}
+    function test_Vote_Status_Processed_Pause(uint256 votes) public {}
+
+    function test_Vote_Status_Processed_ActionNone(uint256 votes) public {
+        vm.assume(20 ether > votes);
+        vm.assume(votes > 0);
+
+        bool decision = true;
+        roles[0] = ARTISTS;
+        roles[1] = OPERATIONS;
+        spotsCap[0] = 1;
+        spotsCap[1] = 1;
+        uint256 artistsSpotsUsed = spotsCap[0];
+
+        bytes memory payload;
+        uint256 id = postProposal(
+            owner,
+            50,
+            ICollective.Tally.QUADRATIC,
+            ICollective.Action.NONE,
+            payload,
+            TEST
+        );
+
+        grantRole(address(bulletin), owner, bob, ARTISTS);
+
+        vm.prank(bob);
+        collective.sponsor(id);
+        ICollective.Proposal memory p = collective.getProposal(id);
+
+        vm.prank(bob);
+        collective.vote(decision, id, ARTISTS, votes);
+
+        p = collective.getProposal(id);
+        assertEq(uint8(p.status), uint8(ICollective.Status.PROCESSED));
+        assertEq(p.spotsUsed[0], artistsSpotsUsed - 1);
+    }
+
+    /* -------------------------------------------------------------------------- */
+    /*                                  Reverts.                                  */
+    /* -------------------------------------------------------------------------- */
 
     function testRevert_Vote_NotQualified(bool decision, uint256 votes) public {
         vm.assume(10 ether > votes);
