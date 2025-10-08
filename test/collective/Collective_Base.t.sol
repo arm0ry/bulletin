@@ -9,7 +9,7 @@ import {Collective} from "src/Collective.sol";
 import {IBulletin} from "src/interface/IBulletin.sol";
 import {ICollective} from "src/interface/ICollective.sol";
 
-contract CollectiveTest_Base is Test {
+contract CollectiveTest is Test {
     Collective collective;
     Bulletin bulletin;
     MockERC20 mock;
@@ -97,21 +97,9 @@ contract CollectiveTest_Base is Test {
         return Bulletin(payable(_bulletin)).rolesOf(user);
     }
 
-    function sponsor(address user, uint256 propId) public {
-        vm.prank(user);
-        collective.sponsor(propId);
-    }
-
-    function vote(
-        address voter,
-        bool decision,
-        uint256 propId,
-        uint256 role,
-        uint256 votes
-    ) public {
-        vm.prank(voter);
-        collective.vote(decision, propId, role, votes);
-    }
+    /* -------------------------------------------------------------------------- */
+    /*                                   Credit.                                  */
+    /* -------------------------------------------------------------------------- */
 
     function activate(
         address _bulletin,
@@ -122,6 +110,20 @@ contract CollectiveTest_Base is Test {
         vm.prank(_owner);
         Bulletin(payable(_bulletin)).activate(user, amount);
     }
+
+    function adjust(
+        address _bulletin,
+        address _owner,
+        address user,
+        uint256 amount
+    ) public payable {
+        vm.prank(_owner);
+        Bulletin(payable(_bulletin)).adjust(user, amount);
+    }
+
+    /* -------------------------------------------------------------------------- */
+    /*                                 Proposals.                                 */
+    /* -------------------------------------------------------------------------- */
 
     function postProposal(
         address proposer,
@@ -179,6 +181,26 @@ contract CollectiveTest_Base is Test {
 
         return collective.proposalId();
     }
+
+    function sponsor(address user, uint256 propId) public {
+        vm.prank(user);
+        collective.sponsor(propId);
+    }
+
+    function vote(
+        address voter,
+        bool decision,
+        uint256 propId,
+        uint256 role,
+        uint256 votes
+    ) public {
+        vm.prank(voter);
+        collective.vote(decision, propId, role, votes);
+    }
+
+    /* -------------------------------------------------------------------------- */
+    /*                                  Payload.                                  */
+    /* -------------------------------------------------------------------------- */
 
     function getPayload_Credit(
         address user,
@@ -250,5 +272,122 @@ contract CollectiveTest_Base is Test {
         uint256 tradeId
     ) public pure returns (bytes memory) {
         return abi.encode(subjectId, tradeId);
+    }
+
+    /* -------------------------------------------------------------------------- */
+    /*                               From Bulletin.                               */
+    /* -------------------------------------------------------------------------- */
+
+    function mockApprove(
+        address approver,
+        address spender,
+        uint256 amount
+    ) public payable {
+        vm.prank(approver);
+        mock.approve(spender, amount);
+    }
+
+    function postRequestWithCredit(
+        address user,
+        uint256 drop
+    ) public payable returns (uint256 id) {
+        IBulletin.Request memory r = IBulletin.Request({
+            from: user,
+            currency: address(0xc0d),
+            drop: drop,
+            data: BYTES,
+            uri: TEST
+        });
+
+        vm.prank(user);
+        bulletin.request(0, r);
+        id = bulletin.requestId();
+    }
+
+    function postRequestWithCurrency(
+        address user,
+        uint256 mint,
+        uint256 drop
+    ) public payable returns (uint256 id) {
+        mock.mint(user, mint);
+        mockApprove(user, address(bulletin), drop);
+
+        IBulletin.Request memory r = IBulletin.Request({
+            from: user,
+            currency: address(mock),
+            drop: drop,
+            data: BYTES,
+            uri: TEST
+        });
+
+        vm.prank(user);
+        bulletin.request(0, r);
+        id = bulletin.requestId();
+    }
+
+    function postTradeWithPromise(
+        IBulletin.TradeType tradeType,
+        address user,
+        uint256 subjectId,
+        string memory content,
+        bytes memory data
+    ) public payable returns (uint256 id) {
+        bytes32 r;
+        IBulletin.Trade memory trade = IBulletin.Trade({
+            approved: true,
+            paused: true,
+            timestamp: uint40(block.timestamp),
+            duration: 2 weeks,
+            from: user,
+            resource: r,
+            currency: address(0),
+            amount: 0,
+            content: content,
+            data: data
+        });
+        vm.prank(user);
+        bulletin.trade(tradeType, subjectId, trade);
+        id = (tradeType == IBulletin.TradeType.RESPONSE)
+            ? bulletin.tradeIdsPerRequest(subjectId)
+            : bulletin.tradeIdsPerResource(subjectId);
+    }
+
+    function postTradeWithCurrency(
+        IBulletin.TradeType tradeType,
+        address user,
+        uint256 subjectId,
+        address currency,
+        uint256 amount
+    ) public payable returns (uint256 id) {
+        bytes32 r;
+        if (currency != address(0) && currency != address(0xc0d)) {
+            mock.mint(user, amount);
+            mockApprove(user, address(bulletin), amount);
+        }
+
+        if (currency == address(0xc0d)) {
+            IBulletin.Credit memory c = bulletin.getCredit(user);
+            if (c.limit > 0)
+                adjust(address(bulletin), owner, user, amount + c.limit);
+            else activate(address(bulletin), owner, user, amount);
+        }
+
+        IBulletin.Trade memory trade = IBulletin.Trade({
+            approved: true,
+            paused: true,
+            timestamp: uint40(block.timestamp),
+            duration: 2 weeks,
+            from: user,
+            resource: r,
+            currency: currency,
+            amount: amount,
+            content: TEST,
+            data: BYTES
+        });
+        vm.prank(user);
+        bulletin.trade(tradeType, subjectId, trade);
+        id = (tradeType == IBulletin.TradeType.RESPONSE)
+            ? bulletin.tradeIdsPerRequest(subjectId)
+            : bulletin.tradeIdsPerResource(subjectId);
     }
 }

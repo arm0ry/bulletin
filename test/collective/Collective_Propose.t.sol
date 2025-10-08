@@ -3,12 +3,12 @@ pragma solidity ^0.8.17;
 
 import "forge-std/Test.sol";
 
-import {CollectiveTest_Base} from "test/collective/Collective_Base.t.sol";
+import {CollectiveTest} from "test/collective/Collective_Base.t.sol";
 import {MockERC20} from "lib/solady/test/utils/mocks/MockERC20.sol";
 import {IBulletin} from "src/interface/IBulletin.sol";
 import {ICollective} from "src/interface/ICollective.sol";
 
-contract CollectiveTest_Propose is Test, CollectiveTest_Base {
+contract CollectiveTest_Propose is Test, CollectiveTest {
     function test_PostProprosal_Doc(
         uint8 quorum,
         uint8 _tally,

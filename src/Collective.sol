@@ -220,7 +220,7 @@ contract Collective is ICollective {
                 } else p.status = Status.VOTED;
             }
         }
-        if (!isQualified) revert InvalidVoter();
+        if (!isQualified) revert NotQualified();
     }
 
     /* -------------------------------------------------------------------------- */

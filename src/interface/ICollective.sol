@@ -88,7 +88,6 @@ interface ICollective {
     error NotProposer();
     error NotQualified();
     error PropNotReady();
-    error InvalidVoter();
     error NotCollective();
     error InvalidQuorum();
     error PropInProgress();
